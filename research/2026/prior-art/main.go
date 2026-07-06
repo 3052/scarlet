@@ -24,8 +24,7 @@ func main() {
    baseURL := "https://api.github.com/search/code"
 
    q := url.Values{}
-   // UPDATED: Added "include_usage" to the search query
-   q.Add("q", `language:go "include_usage" "reasoning_content" "cached_tokens"`)
+   q.Add("q", `"cached_tokens" "reasoning_content" "prompt_tokens_details" "prompt_tokens" "include_usage" language:go`)
    q.Add("per_page", "100")
 
    for page := 1; page <= 10; page++ {
@@ -132,6 +131,13 @@ func main() {
 
          if closeErr := repoResp.Body.Close(); closeErr != nil {
             fmt.Printf("Warning: failed to close repo info body for %s: %v\n", repoURL, closeErr)
+         }
+
+         // INSTANT FAIL CONDITION: 0 stars
+         if repoInfo.StargazersCount == 0 {
+            fmt.Printf("FAIL %s (0 stars)\n", repoURL)
+            time.Sleep(300 * time.Millisecond)
+            continue // Skip Step 2, 3, and 4 entirely
          }
 
          // STEP 2: Fetch the entire file tree for the repository

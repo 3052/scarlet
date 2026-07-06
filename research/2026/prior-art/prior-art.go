@@ -53,7 +53,8 @@ type GitTree struct {
 }
 
 type RepoInfo struct {
-   DefaultBranch string `json:"default_branch"`
+   DefaultBranch   string `json:"default_branch"`
+   StargazersCount int    `json:"stargazers_count"` // Added to check for zero-star repos
 }
 
 type SearchResponse struct {
