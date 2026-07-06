@@ -18,7 +18,7 @@ func main() {
    apiUrlFlag := flag.String("api-url", "", "Update the API URL in your config (expects an OpenAI-compatible chat completions endpoint)")
    modelFlag := flag.String("model", "", "Update the Model name in your config")
    serveFlag := flag.Bool("serve", false, "Start the local chatbot server")
-
+   
    flag.Parse()
 
    // Strictly enforce exactly one flag at a time
@@ -39,7 +39,7 @@ func run(apiKeyFlag, apiUrlFlag, modelFlag *string, serve bool) error {
       return fmt.Errorf("error getting user config directory: %w", err)
    }
 
-   appConfigDir := filepath.Join(configDir, "chatbot")
+   appConfigDir := filepath.Join(configDir, "scarlet")
    configFilePath := filepath.Join(appConfigDir, "config.json")
 
    // Start with an empty config
@@ -47,7 +47,9 @@ func run(apiKeyFlag, apiUrlFlag, modelFlag *string, serve bool) error {
 
    // Try to load existing config
    if data, err := os.ReadFile(configFilePath); err == nil {
-      json.Unmarshal(data, cfg)
+      if err := json.Unmarshal(data, cfg); err != nil {
+         log.Printf("warning: error parsing existing config.json: %v", err)
+      }
    }
 
    // Update config ONLY if flags were explicitly provided by the user in the CLI
@@ -70,7 +72,12 @@ func run(apiKeyFlag, apiUrlFlag, modelFlag *string, serve bool) error {
       if err := os.MkdirAll(appConfigDir, 0700); err != nil {
          return fmt.Errorf("error creating config directory: %w", err)
       }
-      configData, _ := json.MarshalIndent(cfg, "", "  ")
+      
+      configData, err := json.MarshalIndent(cfg, "", "  ")
+      if err != nil {
+         return fmt.Errorf("error marshaling config data: %w", err)
+      }
+      
       if err := os.WriteFile(configFilePath, configData, 0600); err != nil {
          return fmt.Errorf("error writing config file: %w", err)
       }

@@ -1,22 +1,10 @@
 package scarlet
 
 import (
+   "fmt"
    "html"
    "strings"
 )
-
-func isNumberedList(s string) bool {
-   idx := strings.Index(s, ". ")
-   if idx > 0 && idx <= 3 {
-      for i := 0; i < idx; i++ {
-         if s[i] < '0' || s[i] > '9' {
-            return false
-         }
-      }
-      return true
-   }
-   return false
-}
 
 type Markdown struct {
    inCodeBlock bool
@@ -30,18 +18,18 @@ type Markdown struct {
 func (m *Markdown) Render(raw string) string {
    var out strings.Builder
    lines := strings.Split(raw, "\n")
-
+   
    for _, line := range lines {
       out.WriteString(m.RenderLine(line))
    }
-
+   
    if m.inList {
       out.WriteString("</ul>")
    }
    if m.inCodeBlock {
       out.WriteString("</pre>")
    }
-
+   
    return out.String()
 }
 
@@ -81,7 +69,8 @@ func (m *Markdown) RenderLine(line string) string {
             break
          }
       }
-      out.WriteString(html.EscapeString(line[trimCount:]) + "\n")
+      out.WriteString(html.EscapeString(line[trimCount:]))
+      out.WriteString("\n")
       return out.String()
    }
 
@@ -98,17 +87,23 @@ func (m *Markdown) RenderLine(line string) string {
    }
 
    if strings.HasPrefix(trimmed, "### ") {
-      out.WriteString("<h3>" + m.parseInline(strings.TrimPrefix(trimmed, "### ")) + "</h3>")
+      out.WriteString("<h3>")
+      out.WriteString(m.parseInline(strings.TrimPrefix(trimmed, "### ")))
+      out.WriteString("</h3>")
       m.prevBlock = true
       m.wantsBreak = false
       return out.String()
    } else if strings.HasPrefix(trimmed, "## ") {
-      out.WriteString("<h2>" + m.parseInline(strings.TrimPrefix(trimmed, "## ")) + "</h2>")
+      out.WriteString("<h2>")
+      out.WriteString(m.parseInline(strings.TrimPrefix(trimmed, "## ")))
+      out.WriteString("</h2>")
       m.prevBlock = true
       m.wantsBreak = false
       return out.String()
    } else if strings.HasPrefix(trimmed, "# ") {
-      out.WriteString("<h1>" + m.parseInline(strings.TrimPrefix(trimmed, "# ")) + "</h1>")
+      out.WriteString("<h1>")
+      out.WriteString(m.parseInline(strings.TrimPrefix(trimmed, "# ")))
+      out.WriteString("</h1>")
       m.prevBlock = true
       m.wantsBreak = false
       return out.String()
@@ -119,7 +114,7 @@ func (m *Markdown) RenderLine(line string) string {
          m.inList = true
          out.WriteString("<ul>")
       }
-
+      
       content := trimmed
       if strings.HasPrefix(trimmed, "* ") || strings.HasPrefix(trimmed, "- ") {
          content = trimmed[2:]
@@ -129,7 +124,18 @@ func (m *Markdown) RenderLine(line string) string {
             content = trimmed[idx+2:]
          }
       }
-      out.WriteString("<li>" + m.parseInline(content) + "</li>")
+      
+      leadingSpaces := len(line) - len(strings.TrimLeft(line, " "))
+      if leadingSpaces > 0 {
+         fmt.Fprintf(&out, "<li style=\"margin-left: %dpx;\">", leadingSpaces*10)
+         out.WriteString(m.parseInline(content))
+         out.WriteString("</li>")
+      } else {
+         out.WriteString("<li>")
+         out.WriteString(m.parseInline(content))
+         out.WriteString("</li>")
+      }
+      
       m.prevBlock = true
       m.wantsBreak = false
       return out.String()
@@ -142,7 +148,7 @@ func (m *Markdown) RenderLine(line string) string {
          out.WriteString("<br>")
       }
    }
-
+   
    m.prevBlock = false
    m.wantsBreak = false
    m.hasText = true
@@ -178,7 +184,7 @@ func (m *Markdown) parseInline(line string) string {
             } else {
                out.WriteString("</strong>")
             }
-            j++
+            j++ 
          } else {
             inItalic = !inItalic
             if inItalic {
@@ -223,4 +229,17 @@ func (m *Markdown) parseInline(line string) string {
    }
 
    return out.String()
+}
+
+func isNumberedList(s string) bool {
+   idx := strings.Index(s, ". ")
+   if idx > 0 && idx <= 3 {
+      for i := 0; i < idx; i++ {
+         if s[i] < '0' || s[i] > '9' {
+            return false
+         }
+      }
+      return true
+   }
+   return false
 }
