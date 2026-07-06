@@ -11,12 +11,10 @@ import (
    "strings"
 )
 
-const apiURL = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
-
 // buildAPIRequest constructs the JSON payload and HTTP headers.
-func buildAPIRequest(messages []Message, apiKey string) (*http.Request, error) {
+func buildAPIRequest(messages []Message, cfg AppConfig) (*http.Request, error) {
    payload := map[string]any{
-      "model":          "glm-5.2",
+      "model":          cfg.Model,
       "messages":       messages,
       "stream":         true,
       "stream_options": map[string]bool{"include_usage": true},
@@ -27,13 +25,13 @@ func buildAPIRequest(messages []Message, apiKey string) (*http.Request, error) {
       return nil, fmt.Errorf("marshaling JSON payload: %w", err)
    }
 
-   req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(body))
+   req, err := http.NewRequest("POST", cfg.APIURL, bytes.NewBuffer(body))
    if err != nil {
       return nil, fmt.Errorf("creating HTTP request: %w", err)
    }
 
    req.Header.Set("Content-Type", "application/json")
-   req.Header.Set("Authorization", "Bearer "+apiKey)
+   req.Header.Set("Authorization", "Bearer "+cfg.APIKey)
    req.Header.Set("Accept", "text/event-stream")
    return req, nil
 }
@@ -168,13 +166,13 @@ func consumeStream(body io.Reader, onToken func(string)) (*Message, error) {
 }
 
 // processChat orchestrates the API request and parses the resulting stream.
-func processChat(messages []Message, apiKey string, onToken func(text string)) (*Message, error) {
-   req, err := buildAPIRequest(messages, apiKey)
+func processChat(messages []Message, cfg AppConfig, onToken func(text string)) (*Message, error) {
+   req, err := buildAPIRequest(messages, cfg)
    if err != nil {
       return nil, err
    }
 
-   log.Printf("POST %s", apiURL)
+   log.Printf("POST %s", cfg.APIURL)
    resp, err := http.DefaultClient.Do(req)
    if err != nil {
       return nil, fmt.Errorf("executing HTTP request: %w", err)

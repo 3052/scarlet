@@ -12,7 +12,7 @@ import (
 )
 
 // handleRoot handles rendering the page (GET) and streaming new responses (POST)
-func handleRoot(w http.ResponseWriter, r *http.Request, apiKey, headerHTML, footerHTML string) error {
+func handleRoot(w http.ResponseWriter, r *http.Request, cfg AppConfig, headerHTML, footerHTML string) error {
    var messages []Message
    sessionData, err := os.ReadFile(sessionFileName)
    if err != nil {
@@ -81,7 +81,7 @@ func handleRoot(w http.ResponseWriter, r *http.Request, apiKey, headerHTML, foot
          }
       }
 
-      replyMsg, err := processChat(messages, apiKey, onToken)
+      replyMsg, err := processChat(messages, cfg, onToken)
       if err != nil {
          return fmt.Errorf("API error: %w", err)
       }
