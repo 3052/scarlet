@@ -133,9 +133,9 @@ func main() {
             fmt.Printf("Warning: failed to close repo info body for %s: %v\n", repoURL, closeErr)
          }
 
-         // INSTANT FAIL CONDITION: 0 stars
-         if repoInfo.StargazersCount == 0 {
-            fmt.Printf("FAIL %s (0 stars)\n", repoURL)
+         // INSTANT FAIL CONDITION: 0 or 1 stars
+         if repoInfo.StargazersCount <= 1 {
+            fmt.Printf("FAIL %s (%d stars)\n", repoURL, repoInfo.StargazersCount)
             time.Sleep(300 * time.Millisecond)
             continue // Skip Step 2, 3, and 4 entirely
          }
