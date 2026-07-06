@@ -1,29 +1,15 @@
 package main
 
 import (
-   _ "embed"
    "encoding/json"
    "flag"
    "fmt"
    "log"
-   "net/http"
    "os"
    "path/filepath"
-   "strings"
+
+   "41.neocities.org/scarlet"
 )
-
-const serverAddress = "localhost:8080"
-
-const sessionFileName = "session.json"
-
-//go:embed favicon.svg
-var faviconSVG string
-
-//go:embed index.html
-var indexHTML string
-
-//go:embed style.css
-var styleCSS string
 
 func main() {
    log.SetFlags(log.Ltime)
@@ -48,11 +34,6 @@ func main() {
 }
 
 func run(apiKeyFlag, apiUrlFlag, modelFlag *string, serve bool) error {
-   headerHTML, footerHTML, found := strings.Cut(indexHTML, "<!-- CHAT_CONTENT -->")
-   if !found {
-      return fmt.Errorf("error: index.html is missing the <!-- CHAT_CONTENT --> marker")
-   }
-
    configDir, err := os.UserConfigDir()
    if err != nil {
       return fmt.Errorf("error getting user config directory: %w", err)
@@ -62,11 +43,11 @@ func run(apiKeyFlag, apiUrlFlag, modelFlag *string, serve bool) error {
    configFilePath := filepath.Join(appConfigDir, "config.json")
 
    // Start with an empty config
-   var cfg AppConfig
+   cfg := &scarlet.AppConfig{}
 
    // Try to load existing config
    if data, err := os.ReadFile(configFilePath); err == nil {
-      json.Unmarshal(data, &cfg)
+      json.Unmarshal(data, cfg)
    }
 
    // Update config ONLY if flags were explicitly provided by the user in the CLI
@@ -112,28 +93,5 @@ func run(apiKeyFlag, apiUrlFlag, modelFlag *string, serve bool) error {
       return fmt.Errorf("model not found; please run with '-model YOUR_MODEL'")
    }
 
-   http.HandleFunc("/style.css", func(w http.ResponseWriter, r *http.Request) {
-      w.Header().Set("Content-Type", "text/css")
-      fmt.Fprint(w, styleCSS)
-   })
-
-   http.HandleFunc("/favicon.svg", func(w http.ResponseWriter, r *http.Request) {
-      w.Header().Set("Content-Type", "image/svg+xml")
-      fmt.Fprint(w, faviconSVG)
-   })
-
-   http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-      if err := handleRoot(w, r, cfg, headerHTML, footerHTML); err != nil {
-         log.Printf("Handler error: %v", err)
-      }
-   })
-
-   log.Printf("Starting local server at http://%s - Press Ctrl+C to stop", serverAddress)
-   return http.ListenAndServe(serverAddress, nil)
-}
-
-type AppConfig struct {
-   APIKey string `json:"api_key"`
-   APIURL string `json:"api_url"`
-   Model  string `json:"model"`
+   return scarlet.RunServer(cfg)
 }

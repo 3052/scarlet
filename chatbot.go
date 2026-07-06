@@ -1,4 +1,4 @@
-package main
+package scarlet
 
 import (
    "bufio"
@@ -11,8 +11,7 @@ import (
    "strings"
 )
 
-// buildAPIRequest constructs the JSON payload and HTTP headers.
-func buildAPIRequest(messages []Message, cfg AppConfig) (*http.Request, error) {
+func buildAPIRequest(messages []Message, cfg *AppConfig) (*http.Request, error) {
    payload := map[string]any{
       "model":          cfg.Model,
       "messages":       messages,
@@ -36,7 +35,6 @@ func buildAPIRequest(messages []Message, cfg AppConfig) (*http.Request, error) {
    return req, nil
 }
 
-// flushBuffers processes completed lines through the Markdown engine.
 func flushBuffers(buf *string, md *Markdown, onToken func(string)) {
    for {
       idx := strings.IndexByte(*buf, '\n')
@@ -51,7 +49,6 @@ func flushBuffers(buf *string, md *Markdown, onToken func(string)) {
    }
 }
 
-// flushRemaining safely closes any hanging Markdown tags when the stream stops.
 func flushRemaining(buf *string, md *Markdown, onToken func(string)) {
    if *buf != "" {
       if onToken != nil {
@@ -77,7 +74,6 @@ type Message struct {
    ReasoningContent string `json:"reasoning_content,omitempty"`
 }
 
-// consumeStream reads the SSE connection and processes tokens via the Markdown state machines.
 func consumeStream(body io.Reader, onToken func(string)) (*Message, error) {
    var fullReasoning, fullContent strings.Builder
    var rBuf, cBuf string
@@ -165,8 +161,7 @@ func consumeStream(body io.Reader, onToken func(string)) (*Message, error) {
    }, nil
 }
 
-// processChat orchestrates the API request and parses the resulting stream.
-func processChat(messages []Message, cfg AppConfig, onToken func(text string)) (*Message, error) {
+func processChat(messages []Message, cfg *AppConfig, onToken func(text string)) (*Message, error) {
    req, err := buildAPIRequest(messages, cfg)
    if err != nil {
       return nil, err

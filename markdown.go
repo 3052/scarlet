@@ -1,4 +1,4 @@
-package main
+package scarlet
 
 import (
    "html"
@@ -18,7 +18,6 @@ func isNumberedList(s string) bool {
    return false
 }
 
-// Markdown is a stateful parser used for history and live-streaming chunks
 type Markdown struct {
    inCodeBlock bool
    codeIndent  int
@@ -28,7 +27,6 @@ type Markdown struct {
    hasText     bool
 }
 
-// Render processes a full historical message block
 func (m *Markdown) Render(raw string) string {
    var out strings.Builder
    lines := strings.Split(raw, "\n")
@@ -47,25 +45,21 @@ func (m *Markdown) Render(raw string) string {
    return out.String()
 }
 
-// RenderLine processes a single buffered line of Markdown into clean HTML
 func (m *Markdown) RenderLine(line string) string {
    trimmed := strings.TrimSpace(line)
    var out strings.Builder
 
    isListItem := strings.HasPrefix(trimmed, "* ") || strings.HasPrefix(trimmed, "- ") || isNumberedList(trimmed)
 
-   // Close an active list if the current line is not a list item or is empty
    if m.inList && !isListItem && !m.inCodeBlock {
       m.inList = false
       out.WriteString("</ul>")
       m.prevBlock = true
    }
 
-   // 1. Check for code block toggles
    if strings.HasPrefix(trimmed, "```") {
       if !m.inCodeBlock {
          m.inCodeBlock = true
-         // Calculate how many spaces the AI indented the code block by
          m.codeIndent = len(line) - len(strings.TrimLeft(line, " "))
          out.WriteString("<pre>")
       } else {
@@ -78,7 +72,6 @@ func (m *Markdown) RenderLine(line string) string {
       return out.String()
    }
 
-   // 2. Safely escape code lines natively and strip the base AI indentation
    if m.inCodeBlock {
       trimCount := 0
       for i := 0; i < len(line); i++ {
@@ -92,13 +85,11 @@ func (m *Markdown) RenderLine(line string) string {
       return out.String()
    }
 
-   // 3. Empty lines act as spacing markers, not literal breaks
    if trimmed == "" {
       m.wantsBreak = true
       return out.String()
    }
 
-   // 4. Horizontal Rule
    if trimmed == "---" || trimmed == "***" {
       out.WriteString("<hr>")
       m.prevBlock = true
@@ -106,7 +97,6 @@ func (m *Markdown) RenderLine(line string) string {
       return out.String()
    }
 
-   // 5. Headers
    if strings.HasPrefix(trimmed, "### ") {
       out.WriteString("<h3>" + m.parseInline(strings.TrimPrefix(trimmed, "### ")) + "</h3>")
       m.prevBlock = true
@@ -124,7 +114,6 @@ func (m *Markdown) RenderLine(line string) string {
       return out.String()
    }
 
-   // 6. List Items
    if isListItem {
       if !m.inList {
          m.inList = true
@@ -146,7 +135,6 @@ func (m *Markdown) RenderLine(line string) string {
       return out.String()
    }
 
-   // 7. Normal text (Smart Line Breaks)
    if !m.prevBlock {
       if m.wantsBreak {
          out.WriteString("<br><br>")
@@ -202,10 +190,9 @@ func (m *Markdown) parseInline(line string) string {
          continue
       }
 
-      // Convert "->" to a right arrow, but ONLY if we are not inside an inline code snippet
       if !inInlineCode && r == '-' && j < len(runes)-1 && runes[j+1] == '>' {
          out.WriteString("&rarr;")
-         j++ // skip the '>'
+         j++
          continue
       }
 

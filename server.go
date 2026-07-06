@@ -1,6 +1,7 @@
-package main
+package scarlet
 
 import (
+   _ "embed"
    "encoding/json"
    "fmt"
    "html"
@@ -9,10 +10,50 @@ import (
    "mime/multipart"
    "net/http"
    "os"
+   "strings"
 )
 
-// handleRoot handles rendering the page (GET) and streaming new responses (POST)
-func handleRoot(w http.ResponseWriter, r *http.Request, cfg AppConfig, headerHTML, footerHTML string) error {
+const serverAddress = "localhost:8080"
+
+const sessionFileName = "session.json"
+
+//go:embed favicon.svg
+var faviconSVG string
+
+//go:embed index.html
+var indexHTML string
+
+//go:embed style.css
+var styleCSS string
+
+// RunServer initializes the HTTP routes and starts the web server
+func RunServer(cfg *AppConfig) error {
+   headerHTML, footerHTML, found := strings.Cut(indexHTML, "<!-- CHAT_CONTENT -->")
+   if !found {
+      return fmt.Errorf("error: index.html is missing the <!-- CHAT_CONTENT --> marker")
+   }
+
+   http.HandleFunc("/style.css", func(w http.ResponseWriter, r *http.Request) {
+      w.Header().Set("Content-Type", "text/css")
+      fmt.Fprint(w, styleCSS)
+   })
+
+   http.HandleFunc("/favicon.svg", func(w http.ResponseWriter, r *http.Request) {
+      w.Header().Set("Content-Type", "image/svg+xml")
+      fmt.Fprint(w, faviconSVG)
+   })
+
+   http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+      if err := handleRoot(w, r, cfg, headerHTML, footerHTML); err != nil {
+         log.Printf("Handler error: %v", err)
+      }
+   })
+
+   log.Printf("Starting local server at http://%s - Press Ctrl+C to stop", serverAddress)
+   return http.ListenAndServe(serverAddress, nil)
+}
+
+func handleRoot(w http.ResponseWriter, r *http.Request, cfg *AppConfig, headerHTML, footerHTML string) error {
    var messages []Message
    sessionData, err := os.ReadFile(sessionFileName)
    if err != nil {
@@ -104,7 +145,6 @@ func handleRoot(w http.ResponseWriter, r *http.Request, cfg AppConfig, headerHTM
    return nil
 }
 
-// processUploadedFile formats an uploaded file into Markdown block so the AI can read it natively
 func processUploadedFile(fileHeader *multipart.FileHeader) (string, error) {
    file, err := fileHeader.Open()
    if err != nil {
@@ -118,4 +158,10 @@ func processUploadedFile(fileHeader *multipart.FileHeader) (string, error) {
    }
 
    return fmt.Sprintf("\n\nFile: %s\n```\n%s\n```\n", fileHeader.Filename, string(fileData)), nil
+}
+
+type AppConfig struct {
+   APIKey string `json:"api_key"`
+   APIURL string `json:"api_url"`
+   Model  string `json:"model"`
 }
