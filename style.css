@@ -15,19 +15,29 @@ body {
 }
 
 .msg {
-    padding: 10px 15px;
+    padding: 9px;
     border-radius: 8px;
     max-width: 85%;
     word-wrap: break-word;
     line-height: 1.5;
 }
 
-.msg p:first-child, .msg ul:first-child {
+/* Ensure the first and last elements in a message don't create extra dead space */
+.msg > *:first-child {
     margin-top: 0;
 }
 
-.msg p:last-child, .msg ul:last-child {
+.msg > *:last-child {
     margin-bottom: 0;
+}
+
+.msg p {
+    margin: 9px 0;
+}
+
+.msg ul {
+    margin: 9px 0;
+    padding-left: 20px;
 }
 
 .user {
@@ -54,17 +64,12 @@ body {
 
 .reasoning {
     color: #d7ba7d;
-    font-style: italic;
-    display: block;
-    border-left: 3px solid #d7ba7d;
-    padding-left: 10px;
-    margin-bottom: 15px;
 }
 
 .token-stats {
     font-size: 0.75em;
     color: #888;
-    margin-top: 15px;
+    margin-top: 9px;
     padding-top: 8px;
     border-top: 1px dashed #555;
     text-align: right;
@@ -73,7 +78,7 @@ body {
 
 pre {
     background: #111;
-    padding: 10px;
+    padding: 9px;
     border-radius: 4px;
     overflow-x: auto;
     max-width: 100%;
@@ -82,7 +87,7 @@ pre {
     /* Reset inheritance so it matches main content */
     font-style: normal;
     color: #eee;
-    margin: 15px 0;
+    margin: 9px 0;
     
     /* Click any code block to select all, then Ctrl+C to copy */
     -webkit-user-select: all;
@@ -97,9 +102,9 @@ code {
 
 details {
     background: #222;
-    padding: 10px;
+    padding: 9px;
     border-radius: 4px;
-    margin: 10px 0 0 0;
+    margin: 9px 0;
     border: 1px solid #444;
 }
 
@@ -111,7 +116,7 @@ summary {
 hr {
     border: 0;
     border-top: 1px solid #555;
-    margin: 15px 0;
+    margin: 9px 0;
 }
 
 .input-area {
@@ -131,7 +136,7 @@ textarea {
     background: #1e1e1e;
     color: #eee;
     border: 1px solid #444;
-    padding: 10px;
+    padding: 9px;
     border-radius: 4px;
     resize: none;
     height: 40px;
@@ -143,7 +148,7 @@ input[type="file"]::file-selector-button {
     background: #0e639c;
     color: white;
     border: none;
-    padding: 10px 15px;
+    padding: 9px 15px;
     border-radius: 4px;
     cursor: pointer;
 }

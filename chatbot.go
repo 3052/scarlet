@@ -66,12 +66,11 @@ func flushRemaining(buf *string, md *Markdown, onToken func(string)) {
          onToken("</pre>")
       }
    }
-}
-
-type Message struct {
-   Role             string `json:"role"`
-   Content          string `json:"content"`
-   ReasoningContent string `json:"reasoning_content,omitempty"`
+   if md.inParagraph {
+      if onToken != nil {
+         onToken("</p>")
+      }
+   }
 }
 
 func consumeStream(body io.Reader, onToken func(string)) (*Message, error) {
@@ -102,7 +101,7 @@ func consumeStream(body io.Reader, onToken func(string)) (*Message, error) {
          if rc := choice.Delta.ReasoningContent; rc != "" {
             if !printedR {
                if onToken != nil {
-                  onToken(`<details class="reasoning" open><summary>Thinking Process</summary>`)
+                  onToken(`<details class="reasoning" open><summary>Reasoning</summary>`)
                }
                printedR = true
             }
@@ -114,7 +113,7 @@ func consumeStream(body io.Reader, onToken func(string)) (*Message, error) {
          if c := choice.Delta.Content; c != "" {
             if printedR && !printedC {
                if onToken != nil {
-                  onToken(`</details><hr>`)
+                  onToken(`</details>`)
                }
                printedC = true
             }
@@ -128,7 +127,7 @@ func consumeStream(body io.Reader, onToken func(string)) (*Message, error) {
          if printedR && !printedC {
             flushRemaining(&rBuf, rMd, onToken)
             if onToken != nil {
-               onToken(`</details><hr>`)
+               onToken(`</details>`)
             }
             printedC = true
          }
@@ -179,29 +178,4 @@ func processChat(messages []Message, cfg *AppConfig, onToken func(text string)) 
    }
 
    return consumeStream(resp.Body, onToken)
-}
-
-type PromptTokensDetails struct {
-   CachedTokens int `json:"cached_tokens"`
-}
-
-type StreamChoice struct {
-   Delta StreamDelta `json:"delta"`
-}
-
-type StreamDelta struct {
-   Content          string `json:"content"`
-   ReasoningContent string `json:"reasoning_content"`
-}
-
-type StreamResponse struct {
-   Choices []StreamChoice `json:"choices"`
-   Usage   *Usage         `json:"usage,omitempty"`
-}
-
-type Usage struct {
-   PromptTokens        int                 `json:"prompt_tokens"`
-   CompletionTokens    int                 `json:"completion_tokens"`
-   TotalTokens         int                 `json:"total_tokens"`
-   PromptTokensDetails PromptTokensDetails `json:"prompt_tokens_details"`
 }

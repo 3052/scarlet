@@ -13,8 +13,8 @@ import (
    "strings"
 )
 
-const sessionFileName = "session.json"
 const serverAddress = "localhost:8080"
+const sessionFileName = "session.json"
 
 //go:embed favicon.svg
 var faviconSVG string
@@ -24,12 +24,6 @@ var indexHTML string
 
 //go:embed style.css
 var styleCSS string
-
-type AppConfig struct {
-   APIKey string `json:"api_key"`
-   APIURL string `json:"api_url"`
-   Model  string `json:"model"`
-}
 
 // RunServer initializes the HTTP routes and starts the web server
 func RunServer(cfg *AppConfig) error {
@@ -92,7 +86,7 @@ func handleRoot(w http.ResponseWriter, r *http.Request, cfg *AppConfig, headerHT
    // Prevent browsers from caching stale chat history, and prevent proxies
    // from buffering the live stream
    w.Header().Set("Cache-Control", "no-cache")
-   
+
    flusher, canFlush := w.(http.Flusher)
 
    fmt.Fprint(w, headerHTML)
@@ -102,10 +96,10 @@ func handleRoot(w http.ResponseWriter, r *http.Request, cfg *AppConfig, headerHT
          fmt.Fprintf(w, `<div class="msg %s">%s</div>`+"\n", msg.Role, html.EscapeString(msg.Content))
       } else {
          fmt.Fprintf(w, `<div class="msg %s">`, msg.Role)
-         
+
          if msg.ReasoningContent != "" {
             rMd := &Markdown{}
-            fmt.Fprintf(w, `<details class="reasoning"><summary>Thinking Process</summary>%s</details><hr>`, rMd.Render(msg.ReasoningContent))
+            fmt.Fprintf(w, `<details class="reasoning"><summary>Reasoning</summary>%s</details>`, rMd.Render(msg.ReasoningContent))
          }
 
          cMd := &Markdown{}
@@ -119,11 +113,15 @@ func handleRoot(w http.ResponseWriter, r *http.Request, cfg *AppConfig, headerHT
 
    if r.Method == http.MethodPost {
       fmt.Fprint(w, `<div class="msg assistant">`)
-      if canFlush { flusher.Flush() }
+      if canFlush {
+         flusher.Flush()
+      }
 
       onToken := func(text string) {
          fmt.Fprint(w, text)
-         if canFlush { flusher.Flush() }
+         if canFlush {
+            flusher.Flush()
+         }
       }
 
       replyMsg, err := processChat(messages, cfg, onToken)
@@ -161,5 +159,5 @@ func processUploadedFile(fileHeader *multipart.FileHeader) (string, error) {
       return "", fmt.Errorf("error reading uploaded file %s: %w", fileHeader.Filename, err)
    }
 
-   return fmt.Sprintf("\n\nFile: %s\n```\n%s\n```\n", fileHeader.Filename, string(fileData)), nil
+   return fmt.Sprintf("\n\n<details>\n<summary>File: %s</summary>\n```\n%s\n```\n</details>\n", fileHeader.Filename, string(fileData)), nil
 }
