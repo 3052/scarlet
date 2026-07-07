@@ -155,5 +155,5 @@ func processUploadedFile(fileHeader *multipart.FileHeader) (string, error) {
       return "", fmt.Errorf("error reading uploaded file %s: %w", fileHeader.Filename, err)
    }
 
-   return fmt.Sprintf("\n\n<details>\n<summary>File: %s</summary>\n```\n%s\n```\n</details>\n", fileHeader.Filename, string(fileData)), nil
+   return fmt.Sprintf("\n\n<details>\n<summary>%s</summary>\n```\n%s\n```\n</details>\n", fileHeader.Filename, string(fileData)), nil
 }
