@@ -1,3 +1,4 @@
+// server.go
 package scarlet
 
 import (
@@ -95,15 +96,13 @@ func handleRoot(w http.ResponseWriter, r *http.Request, cfg *AppConfig, headerHT
       if msg.Role == "system" {
          fmt.Fprintf(w, `<div class="msg %s">%s</div>`+"\n", msg.Role, html.EscapeString(msg.Content))
       } else {
-         fmt.Fprintf(w, `<div class="msg %s">`, msg.Role)
-
          if msg.ReasoningContent != "" {
             rMd := &Markdown{}
             fmt.Fprintf(w, `<details class="reasoning"><summary>Reasoning</summary>%s</details>`, rMd.Render(msg.ReasoningContent))
          }
 
          cMd := &Markdown{}
-         fmt.Fprintf(w, "%s</div>\n", cMd.Render(msg.Content))
+         fmt.Fprintf(w, "%s\n", cMd.Render(msg.Content))
       }
    }
 
@@ -112,7 +111,6 @@ func handleRoot(w http.ResponseWriter, r *http.Request, cfg *AppConfig, headerHT
    }
 
    if r.Method == http.MethodPost {
-      fmt.Fprint(w, `<div class="msg assistant">`)
       if canFlush {
          flusher.Flush()
       }
@@ -128,8 +126,6 @@ func handleRoot(w http.ResponseWriter, r *http.Request, cfg *AppConfig, headerHT
       if err != nil {
          return fmt.Errorf("API error: %w", err)
       }
-
-      fmt.Fprintln(w, "</div>")
 
       messages = append(messages, *replyMsg)
 

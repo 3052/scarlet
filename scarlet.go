@@ -1,3 +1,4 @@
+// scarlet.go
 package scarlet
 
 import (
@@ -60,16 +61,19 @@ func flushRemaining(buf *string, md *Markdown, onToken func(string)) {
       if onToken != nil {
          onToken("</ul>")
       }
+      md.inList = false
    }
    if md.inCodeBlock {
       if onToken != nil {
          onToken("</pre>")
       }
+      md.inCodeBlock = false
    }
    if md.inParagraph {
       if onToken != nil {
          onToken("</p>")
       }
+      md.inParagraph = false
    }
 }
 

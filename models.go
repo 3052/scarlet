@@ -1,3 +1,4 @@
+// models.go
 package scarlet
 
 type AppConfig struct {
