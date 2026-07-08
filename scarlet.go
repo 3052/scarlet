@@ -36,53 +36,10 @@ func buildAPIRequest(messages []Message, cfg *AppConfig) (*http.Request, error) 
    return req, nil
 }
 
-func flushBuffers(buf *string, md *Markdown, onToken func(string)) {
-   for {
-      idx := strings.IndexByte(*buf, '\n')
-      if idx == -1 {
-         break
-      }
-      lineChunk := (*buf)[:idx]
-      *buf = (*buf)[idx+1:]
-      if onToken != nil {
-         onToken(md.RenderLine(lineChunk))
-      }
-   }
-}
-
-func flushRemaining(buf *string, md *Markdown, onToken func(string)) {
-   if *buf != "" {
-      if onToken != nil {
-         onToken(md.RenderLine(*buf))
-      }
-      *buf = ""
-   }
-   if md.inList {
-      if onToken != nil {
-         onToken("</ul>")
-      }
-      md.inList = false
-   }
-   if md.inCodeBlock {
-      if onToken != nil {
-         onToken("</pre>")
-      }
-      md.inCodeBlock = false
-   }
-   if md.inParagraph {
-      if onToken != nil {
-         onToken("</p>")
-      }
-      md.inParagraph = false
-   }
-}
-
 func consumeStream(body io.Reader, onToken func(string)) (*Message, error) {
    var fullReasoning, fullContent strings.Builder
-   var rBuf, cBuf string
-   var printedR, printedC bool
+   var printedR, reasoningClosed bool
 
-   rMd, cMd := &Markdown{}, &Markdown{}
    scanner := bufio.NewScanner(body)
 
    for scanner.Scan() {
@@ -110,33 +67,32 @@ func consumeStream(body io.Reader, onToken func(string)) (*Message, error) {
                printedR = true
             }
             fullReasoning.WriteString(rc)
-            rBuf += rc
-            flushBuffers(&rBuf, rMd, onToken)
+            if onToken != nil {
+               onToken(escapeHTML(rc))
+            }
          }
 
          if c := choice.Delta.Content; c != "" {
-            if printedR && !printedC {
+            if printedR && !reasoningClosed {
                if onToken != nil {
                   onToken(`</details>`)
                }
-               printedC = true
+               reasoningClosed = true
             }
             fullContent.WriteString(c)
-            cBuf += c
-            flushBuffers(&cBuf, cMd, onToken)
+            if onToken != nil {
+               onToken(escapeHTML(c))
+            }
          }
       }
 
       if sr.Usage != nil && sr.Usage.PromptTokens > 0 {
-         if printedR && !printedC {
-            flushRemaining(&rBuf, rMd, onToken)
+         if printedR && !reasoningClosed {
             if onToken != nil {
                onToken(`</details>`)
             }
-            printedC = true
+            reasoningClosed = true
          }
-
-         flushRemaining(&cBuf, cMd, onToken)
 
          stats := fmt.Sprintf(`<div class="token-stats">Input Tokens: %d (%d cached)</div>`,
             sr.Usage.PromptTokens, sr.Usage.PromptTokensDetails.CachedTokens)
@@ -146,12 +102,11 @@ func consumeStream(body io.Reader, onToken func(string)) (*Message, error) {
       }
    }
 
-   if printedR && !printedC {
+   if printedR && !reasoningClosed {
       if onToken != nil {
          onToken(`</details>`)
       }
    }
-   flushRemaining(&cBuf, cMd, onToken)
 
    if err := scanner.Err(); err != nil {
       return nil, fmt.Errorf("error reading stream: %w", err)

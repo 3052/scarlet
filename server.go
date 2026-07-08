@@ -5,7 +5,6 @@ import (
    _ "embed"
    "encoding/json"
    "fmt"
-   "html"
    "io"
    "log"
    "mime/multipart"
@@ -84,8 +83,6 @@ func handleRoot(w http.ResponseWriter, r *http.Request, cfg *AppConfig, headerHT
    }
 
    w.Header().Set("Content-Type", "text/html; charset=utf-8")
-   // Prevent browsers from caching stale chat history, and prevent proxies
-   // from buffering the live stream
    w.Header().Set("Cache-Control", "no-cache")
 
    flusher, canFlush := w.(http.Flusher)
@@ -94,15 +91,12 @@ func handleRoot(w http.ResponseWriter, r *http.Request, cfg *AppConfig, headerHT
 
    for _, msg := range messages {
       if msg.Role == "system" {
-         fmt.Fprintf(w, `<div class="msg %s">%s</div>`+"\n", msg.Role, html.EscapeString(msg.Content))
+         fmt.Fprintf(w, `<div class="msg %s">%s</div>`+"\n", msg.Role, escapeHTML(msg.Content))
       } else {
          if msg.ReasoningContent != "" {
-            rMd := &Markdown{}
-            fmt.Fprintf(w, `<details class="reasoning"><summary>Reasoning</summary>%s</details>`, rMd.Render(msg.ReasoningContent))
+            fmt.Fprintf(w, `<details class="reasoning"><summary>Reasoning</summary>%s</details>`, escapeHTML(msg.ReasoningContent))
          }
-
-         cMd := &Markdown{}
-         fmt.Fprintf(w, "%s\n", cMd.Render(msg.Content))
+         fmt.Fprintf(w, "%s\n", escapeHTML(msg.Content))
       }
    }
 
