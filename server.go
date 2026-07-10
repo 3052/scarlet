@@ -65,7 +65,7 @@ func handleRoot(w http.ResponseWriter, r *http.Request, cfg *AppConfig, headerHT
       r.ParseMultipartForm(10 << 20) // 10MB limit
 
       userText := r.FormValue("text")
-      combinedInput := userText
+      combinedInput := ""
 
       if files := r.MultipartForm.File["files"]; len(files) > 0 {
          for _, fileHeader := range files {
@@ -75,6 +75,10 @@ func handleRoot(w http.ResponseWriter, r *http.Request, cfg *AppConfig, headerHT
             }
             combinedInput += fileChunk
          }
+      }
+
+      if userText != "" {
+         combinedInput = fmt.Sprintf("<div class=\"user-text\">%s</div>\n%s", escapeHTML(userText), combinedInput)
       }
 
       if combinedInput != "" {
@@ -92,6 +96,11 @@ func handleRoot(w http.ResponseWriter, r *http.Request, cfg *AppConfig, headerHT
    for _, msg := range messages {
       if msg.Role == "system" {
          fmt.Fprintf(w, `<div class="msg %s">%s</div>`+"\n", msg.Role, escapeHTML(msg.Content))
+      } else if msg.Role == "user" {
+         if msg.ReasoningContent != "" {
+            fmt.Fprintf(w, `<details class="reasoning"><summary>Reasoning</summary>%s</details>`, escapeHTML(msg.ReasoningContent))
+         }
+         fmt.Fprintf(w, "%s\n", msg.Content)
       } else {
          if msg.ReasoningContent != "" {
             fmt.Fprintf(w, `<details class="reasoning"><summary>Reasoning</summary>%s</details>`, escapeHTML(msg.ReasoningContent))
