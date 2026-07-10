@@ -105,20 +105,20 @@ func handleRoot(w http.ResponseWriter, r *http.Request, cfg *AppConfig, headerHT
          fmt.Fprintf(w, `<div class="msg %s">%s</div>`+"\n", msg.Role, escapeHTML(msg.Content))
       } else if msg.Role == "user" {
          if msg.ReasoningContent != "" {
-            fmt.Fprintf(w, `<details class="reasoning"><summary>Reasoning</summary>%s</details>`, escapeHTML(msg.ReasoningContent))
+            fmt.Fprintf(w, `<details class="reasoning"><summary>Reasoning</summary>%s</details>`, renderMarkdown(msg.ReasoningContent))
          }
          if msg.Content != "" {
-            fmt.Fprintf(w, `<div class="user-text">%s</div>`+"\n", escapeHTML(msg.Content))
+            fmt.Fprintf(w, `<div class="user-text">%s</div>`+"\n", renderMarkdown(msg.Content))
          }
          for _, f := range msg.Files {
-            fmt.Fprintf(w, "\n<details>\n<summary>%s</summary>\n```\n%s\n```\n</details>\n", escapeHTML(f.Filename), escapeHTML(f.Content))
+            fmt.Fprintf(w, "\n<details class=\"file-attachment\">\n<summary>%s</summary>\n<pre>%s</pre>\n</details>\n", escapeHTML(f.Filename), escapeHTML(strings.TrimRight(f.Content, "\n")))
          }
       } else {
          if msg.ReasoningContent != "" {
-            fmt.Fprintf(w, `<details class="reasoning"><summary>Reasoning</summary>%s</details>`, escapeHTML(msg.ReasoningContent))
+            fmt.Fprintf(w, `<details class="reasoning"><summary>Reasoning</summary>%s</details>`, renderMarkdown(msg.ReasoningContent))
          }
          if msg.Content != "" {
-            fmt.Fprintf(w, `<div class="completion">%s</div>`+"\n", escapeHTML(msg.Content))
+            fmt.Fprintf(w, `<div class="completion">%s</div>`+"\n", renderMarkdown(msg.Content))
          }
       }
    }

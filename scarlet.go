@@ -80,7 +80,7 @@ func consumeStream(body io.Reader, onToken func(string)) (*Message, error) {
             }
             fullReasoning.WriteString(rc)
             if onToken != nil {
-               onToken(escapeHTML(rc))
+               onToken(renderMarkdown(rc))
             }
          }
 
@@ -99,7 +99,7 @@ func consumeStream(body io.Reader, onToken func(string)) (*Message, error) {
             }
             fullContent.WriteString(c)
             if onToken != nil {
-               onToken(escapeHTML(c))
+               onToken(renderMarkdown(c))
             }
          }
       }
