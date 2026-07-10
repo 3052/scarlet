@@ -7,7 +7,6 @@ import (
    "fmt"
    "io"
    "log"
-   "mime/multipart"
    "net/http"
    "os"
    "strings"
@@ -65,24 +64,32 @@ func handleRoot(w http.ResponseWriter, r *http.Request, cfg *AppConfig, headerHT
       r.ParseMultipartForm(10 << 20) // 10MB limit
 
       userText := r.FormValue("text")
-      combinedInput := ""
+      var files []FileAttachment
 
-      if files := r.MultipartForm.File["files"]; len(files) > 0 {
-         for _, fileHeader := range files {
-            fileChunk, err := processUploadedFile(fileHeader)
+      if fileHeaders := r.MultipartForm.File["files"]; len(fileHeaders) > 0 {
+         for _, fh := range fileHeaders {
+            file, err := fh.Open()
             if err != nil {
-               return err
+               return fmt.Errorf("error opening uploaded file %s: %w", fh.Filename, err)
             }
-            combinedInput += fileChunk
+            fileData, err := io.ReadAll(file)
+            file.Close()
+            if err != nil {
+               return fmt.Errorf("error reading uploaded file %s: %w", fh.Filename, err)
+            }
+            files = append(files, FileAttachment{
+               Filename: fh.Filename,
+               Content:  string(fileData),
+            })
          }
       }
 
-      if userText != "" {
-         combinedInput = fmt.Sprintf("<div class=\"user-text\">%s</div>\n%s", escapeHTML(userText), combinedInput)
-      }
-
-      if combinedInput != "" {
-         messages = append(messages, Message{Role: "user", Content: combinedInput})
+      if userText != "" || len(files) > 0 {
+         messages = append(messages, Message{
+            Role:    "user",
+            Content: userText,
+            Files:   files,
+         })
       }
    }
 
@@ -100,12 +107,19 @@ func handleRoot(w http.ResponseWriter, r *http.Request, cfg *AppConfig, headerHT
          if msg.ReasoningContent != "" {
             fmt.Fprintf(w, `<details class="reasoning"><summary>Reasoning</summary>%s</details>`, escapeHTML(msg.ReasoningContent))
          }
-         fmt.Fprintf(w, "%s\n", msg.Content)
+         if msg.Content != "" {
+            fmt.Fprintf(w, `<div class="user-text">%s</div>`+"\n", escapeHTML(msg.Content))
+         }
+         for _, f := range msg.Files {
+            fmt.Fprintf(w, "\n<details>\n<summary>%s</summary>\n```\n%s\n```\n</details>\n", escapeHTML(f.Filename), escapeHTML(f.Content))
+         }
       } else {
          if msg.ReasoningContent != "" {
             fmt.Fprintf(w, `<details class="reasoning"><summary>Reasoning</summary>%s</details>`, escapeHTML(msg.ReasoningContent))
          }
-         fmt.Fprintf(w, "%s\n", escapeHTML(msg.Content))
+         if msg.Content != "" {
+            fmt.Fprintf(w, `<div class="completion">%s</div>`+"\n", escapeHTML(msg.Content))
+         }
       }
    }
 
@@ -144,19 +158,4 @@ func handleRoot(w http.ResponseWriter, r *http.Request, cfg *AppConfig, headerHT
 
    fmt.Fprint(w, footerHTML)
    return nil
-}
-
-func processUploadedFile(fileHeader *multipart.FileHeader) (string, error) {
-   file, err := fileHeader.Open()
-   if err != nil {
-      return "", fmt.Errorf("error opening uploaded file %s: %w", fileHeader.Filename, err)
-   }
-   defer file.Close()
-
-   fileData, err := io.ReadAll(file)
-   if err != nil {
-      return "", fmt.Errorf("error reading uploaded file %s: %w", fileHeader.Filename, err)
-   }
-
-   return fmt.Sprintf("\n\n<details>\n<summary>%s</summary>\n```\n%s\n```\n</details>\n", fileHeader.Filename, string(fileData)), nil
 }

@@ -13,9 +13,21 @@ import (
 )
 
 func buildAPIRequest(messages []Message, cfg *AppConfig) (*http.Request, error) {
+   apiMessages := make([]map[string]string, len(messages))
+   for i, msg := range messages {
+      content := msg.Content
+      for _, f := range msg.Files {
+         content += fmt.Sprintf("\n\n%s\n```\n%s\n```\n", f.Filename, f.Content)
+      }
+      apiMessages[i] = map[string]string{
+         "role":    msg.Role,
+         "content": content,
+      }
+   }
+
    payload := map[string]any{
       "model":          cfg.Model,
-      "messages":       messages,
+      "messages":       apiMessages,
       "stream":         true,
       "stream_options": map[string]bool{"include_usage": true},
    }
@@ -38,7 +50,7 @@ func buildAPIRequest(messages []Message, cfg *AppConfig) (*http.Request, error) 
 
 func consumeStream(body io.Reader, onToken func(string)) (*Message, error) {
    var fullReasoning, fullContent strings.Builder
-   var printedR, reasoningClosed bool
+   var printedR, reasoningClosed, completionOpened bool
 
    scanner := bufio.NewScanner(body)
 
@@ -79,6 +91,12 @@ func consumeStream(body io.Reader, onToken func(string)) (*Message, error) {
                }
                reasoningClosed = true
             }
+            if !completionOpened {
+               if onToken != nil {
+                  onToken(`<div class="completion">`)
+               }
+               completionOpened = true
+            }
             fullContent.WriteString(c)
             if onToken != nil {
                onToken(escapeHTML(c))
@@ -93,6 +111,12 @@ func consumeStream(body io.Reader, onToken func(string)) (*Message, error) {
             }
             reasoningClosed = true
          }
+         if completionOpened {
+            if onToken != nil {
+               onToken(`</div>`)
+            }
+            completionOpened = false
+         }
 
          stats := fmt.Sprintf(`<div class="token-stats">Input Tokens: %d (%d cached)</div>`,
             sr.Usage.PromptTokens, sr.Usage.PromptTokensDetails.CachedTokens)
@@ -105,6 +129,11 @@ func consumeStream(body io.Reader, onToken func(string)) (*Message, error) {
    if printedR && !reasoningClosed {
       if onToken != nil {
          onToken(`</details>`)
+      }
+   }
+   if completionOpened {
+      if onToken != nil {
+         onToken(`</div>`)
       }
    }
 

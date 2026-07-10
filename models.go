@@ -7,10 +7,16 @@ type AppConfig struct {
    Model  string `json:"model"`
 }
 
+type FileAttachment struct {
+   Filename string `json:"filename"`
+   Content  string `json:"content"`
+}
+
 type Message struct {
-   Role             string `json:"role"`
-   Content          string `json:"content"`
-   ReasoningContent string `json:"reasoning_content,omitempty"`
+   Role             string           `json:"role"`
+   Content          string           `json:"content"`
+   ReasoningContent string           `json:"reasoning_content,omitempty"`
+   Files            []FileAttachment `json:"files,omitempty"`
 }
 
 type PromptTokensDetails struct {
