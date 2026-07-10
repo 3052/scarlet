@@ -8,24 +8,35 @@ import (
 
 const (
    stateDefault = iota
-   stateList
+   stateOrderedList
+   stateUnorderedList
 )
 
 func escapeHTML(s string) string {
    return html.EscapeString(s)
 }
 
-func isListLine(line string) (string, bool) {
-   rest := line
+func isOrderedListLine(line string) (string, bool) {
+   rest := strings.TrimLeft(line, " \t")
    n := 0
    for len(rest) > 0 && rest[0] >= '0' && rest[0] <= '9' {
       n = n*10 + int(rest[0]-'0')
       rest = rest[1:]
    }
-   if n == 0 || len(rest) < 2 || rest[0] != '.' || rest[1] != ' ' {
+   if n == 0 || len(rest) < 2 || rest[0] != '.' {
       return "", false
    }
-   return rest[2:], true
+   rest = strings.TrimLeft(rest[1:], " ")
+   return rest, true
+}
+
+func isUnorderedListLine(line string) (string, bool) {
+   rest := strings.TrimLeft(line, " \t")
+   if len(rest) == 0 || rest[0] != '*' {
+      return "", false
+   }
+   rest = strings.TrimLeft(rest[1:], " ")
+   return rest, true
 }
 
 func renderBold(s string) string {
@@ -58,30 +69,56 @@ func renderMarkdown(s string) string {
    state := stateDefault
 
    for _, line := range lines {
-      text, ok := isListLine(line)
+      ordText, isOrd := isOrderedListLine(line)
+      unordText, isUnord := isUnorderedListLine(line)
 
       switch state {
       case stateDefault:
-         if ok {
+         if isOrd {
             result.WriteString("<ol>")
-            result.WriteString("<li>" + renderBold(text) + "</li>")
-            state = stateList
+            result.WriteString("<li>" + renderBold(ordText) + "</li>")
+            state = stateOrderedList
+         } else if isUnord {
+            result.WriteString("<ul>")
+            result.WriteString("<li>" + renderBold(unordText) + "</li>")
+            state = stateUnorderedList
          } else {
             result.WriteString(renderBold(line) + "\n")
          }
-      case stateList:
-         if ok {
-            result.WriteString("<li>" + renderBold(text) + "</li>")
+      case stateOrderedList:
+         if isOrd {
+            result.WriteString("<li>" + renderBold(ordText) + "</li>")
+         } else if isUnord {
+            result.WriteString("</ol>")
+            result.WriteString("<ul>")
+            result.WriteString("<li>" + renderBold(unordText) + "</li>")
+            state = stateUnorderedList
          } else {
             result.WriteString("</ol>")
+            result.WriteString(renderBold(line) + "\n")
+            state = stateDefault
+         }
+      case stateUnorderedList:
+         if isUnord {
+            result.WriteString("<li>" + renderBold(unordText) + "</li>")
+         } else if isOrd {
+            result.WriteString("</ul>")
+            result.WriteString("<ol>")
+            result.WriteString("<li>" + renderBold(ordText) + "</li>")
+            state = stateOrderedList
+         } else {
+            result.WriteString("</ul>")
             result.WriteString(renderBold(line) + "\n")
             state = stateDefault
          }
       }
    }
 
-   if state == stateList {
+   switch state {
+   case stateOrderedList:
       result.WriteString("</ol>")
+   case stateUnorderedList:
+      result.WriteString("</ul>")
    }
 
    return result.String()
