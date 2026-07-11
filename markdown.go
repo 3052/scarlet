@@ -10,10 +10,16 @@ const (
    stateDefault = iota
    stateOrderedList
    stateUnorderedList
+   stateOrderedListNestedUL
+   stateUnorderedListNestedOL
    stateCodeBlock
-   stateOrderedListCodeBlock
-   stateUnorderedListCodeBlock
+   stateOrderedListPending
+   stateUnorderedListPending
 )
+
+func isBlank(line string) bool {
+   return strings.TrimSpace(line) == ""
+}
 
 func isCodeFence(line string) (int, bool) {
    trimmed := strings.TrimLeft(line, " ")
@@ -22,6 +28,10 @@ func isCodeFence(line string) (int, bool) {
       return indent, true
    }
    return 0, false
+}
+
+func isIndented(line string) bool {
+   return len(line) > 0 && (line[0] == ' ' || line[0] == '\t')
 }
 
 func isOrderedListLine(line string) (string, bool) {
@@ -48,6 +58,8 @@ func isUnorderedListLine(line string) (string, bool) {
 }
 
 func renderInline(s string) string {
+   s = strings.ReplaceAll(s, "-&gt;", "→")
+
    var result strings.Builder
    inBold := false
    inCode := false
@@ -89,12 +101,28 @@ func renderMarkdown(s string) string {
    state := stateDefault
    var codeLines []string
    codeBlockIndent := 0
+   codeBlockReturnState := stateDefault
 
    for _, line := range lines {
       switch state {
+      case stateCodeBlock:
+         if _, ok := isCodeFence(line); ok {
+            result.WriteString("<pre>")
+            result.WriteString(strings.Join(codeLines, "\n"))
+            result.WriteString("</pre>\n")
+            codeLines = nil
+            state = codeBlockReturnState
+         } else {
+            if len(line) >= codeBlockIndent {
+               line = line[codeBlockIndent:]
+            }
+            codeLines = append(codeLines, line)
+         }
+
       case stateDefault:
          if indent, ok := isCodeFence(line); ok {
             codeBlockIndent = indent
+            codeBlockReturnState = stateDefault
             state = stateCodeBlock
          } else if strings.TrimSpace(line) == "---" {
             result.WriteString("<hr>\n")
@@ -114,20 +142,28 @@ func renderMarkdown(s string) string {
                result.WriteString("\n")
             }
          }
+
       case stateOrderedList:
          if indent, ok := isCodeFence(line); ok {
             codeBlockIndent = indent
-            state = stateOrderedListCodeBlock
+            codeBlockReturnState = stateOrderedList
+            state = stateCodeBlock
          } else {
             ordText, isOrd := isOrderedListLine(line)
             unordText, isUnord := isUnorderedListLine(line)
             if isOrd {
                result.WriteString(renderListLi(ordText))
+            } else if isUnord && isIndented(line) {
+               result.WriteString("<ul>")
+               result.WriteString(renderListLi(unordText))
+               state = stateOrderedListNestedUL
             } else if isUnord {
                result.WriteString("</ol>")
                result.WriteString("<ul>")
                result.WriteString(renderListLi(unordText))
                state = stateUnorderedList
+            } else if isBlank(line) {
+               state = stateOrderedListPending
             } else {
                result.WriteString("</ol>")
                if strings.TrimSpace(line) == "---" {
@@ -139,20 +175,28 @@ func renderMarkdown(s string) string {
                state = stateDefault
             }
          }
+
       case stateUnorderedList:
          if indent, ok := isCodeFence(line); ok {
             codeBlockIndent = indent
-            state = stateUnorderedListCodeBlock
+            codeBlockReturnState = stateUnorderedList
+            state = stateCodeBlock
          } else {
             ordText, isOrd := isOrderedListLine(line)
             unordText, isUnord := isUnorderedListLine(line)
             if isUnord {
                result.WriteString(renderListLi(unordText))
+            } else if isOrd && isIndented(line) {
+               result.WriteString("<ol>")
+               result.WriteString(renderListLi(ordText))
+               state = stateUnorderedListNestedOL
             } else if isOrd {
                result.WriteString("</ul>")
                result.WriteString("<ol>")
                result.WriteString(renderListLi(ordText))
                state = stateOrderedList
+            } else if isBlank(line) {
+               state = stateUnorderedListPending
             } else {
                result.WriteString("</ul>")
                if strings.TrimSpace(line) == "---" {
@@ -164,57 +208,152 @@ func renderMarkdown(s string) string {
                state = stateDefault
             }
          }
-      case stateCodeBlock:
-         if _, ok := isCodeFence(line); ok {
-            result.WriteString("<pre>")
-            result.WriteString(strings.Join(codeLines, "\n"))
-            result.WriteString("</pre>\n")
-            codeLines = nil
+
+      case stateOrderedListNestedUL:
+         if indent, ok := isCodeFence(line); ok {
+            codeBlockIndent = indent
+            codeBlockReturnState = stateOrderedListNestedUL
+            state = stateCodeBlock
+         } else {
+            unordText, isUnord := isUnorderedListLine(line)
+            ordText, isOrd := isOrderedListLine(line)
+            if isUnord {
+               result.WriteString(renderListLi(unordText))
+            } else if isOrd && !isIndented(line) {
+               result.WriteString("</ul>")
+               result.WriteString(renderListLi(ordText))
+               state = stateOrderedList
+            } else if isBlank(line) {
+               result.WriteString("</ul>")
+               state = stateOrderedListPending
+            } else {
+               result.WriteString("</ul></ol>")
+               if strings.TrimSpace(line) == "---" {
+                  result.WriteString("<hr>\n")
+               } else {
+                  result.WriteString(renderInline(line))
+                  result.WriteString("\n")
+               }
+               state = stateDefault
+            }
+         }
+
+      case stateUnorderedListNestedOL:
+         if indent, ok := isCodeFence(line); ok {
+            codeBlockIndent = indent
+            codeBlockReturnState = stateUnorderedListNestedOL
+            state = stateCodeBlock
+         } else {
+            ordText, isOrd := isOrderedListLine(line)
+            unordText, isUnord := isUnorderedListLine(line)
+            if isOrd {
+               result.WriteString(renderListLi(ordText))
+            } else if isUnord && !isIndented(line) {
+               result.WriteString("</ol>")
+               result.WriteString(renderListLi(unordText))
+               state = stateUnorderedList
+            } else if isBlank(line) {
+               result.WriteString("</ol>")
+               state = stateUnorderedListPending
+            } else {
+               result.WriteString("</ol></ul>")
+               if strings.TrimSpace(line) == "---" {
+                  result.WriteString("<hr>\n")
+               } else {
+                  result.WriteString(renderInline(line))
+                  result.WriteString("\n")
+               }
+               state = stateDefault
+            }
+         }
+
+      case stateOrderedListPending:
+         if isBlank(line) {
+            result.WriteString("</ol>\n")
             state = stateDefault
          } else {
-            if len(line) >= codeBlockIndent {
-               line = line[codeBlockIndent:]
+            ordText, isOrd := isOrderedListLine(line)
+            unordText, isUnord := isUnorderedListLine(line)
+            if isOrd {
+               result.WriteString(renderListLi(ordText))
+               state = stateOrderedList
+            } else if isUnord && isIndented(line) {
+               result.WriteString("<ul>")
+               result.WriteString(renderListLi(unordText))
+               state = stateOrderedListNestedUL
+            } else if isUnord {
+               result.WriteString("</ol>")
+               result.WriteString("<ul>")
+               result.WriteString(renderListLi(unordText))
+               state = stateUnorderedList
+            } else if indent, ok := isCodeFence(line); ok {
+               result.WriteString("</ol>")
+               codeBlockIndent = indent
+               codeBlockReturnState = stateDefault
+               state = stateCodeBlock
+            } else {
+               result.WriteString("</ol>")
+               if strings.TrimSpace(line) == "---" {
+                  result.WriteString("<hr>\n")
+               } else {
+                  result.WriteString(renderInline(line))
+                  result.WriteString("\n")
+               }
+               state = stateDefault
             }
-            codeLines = append(codeLines, line)
          }
-      case stateOrderedListCodeBlock:
-         if _, ok := isCodeFence(line); ok {
-            result.WriteString("<pre>")
-            result.WriteString(strings.Join(codeLines, "\n"))
-            result.WriteString("</pre>\n")
-            codeLines = nil
-            state = stateOrderedList
+
+      case stateUnorderedListPending:
+         if isBlank(line) {
+            result.WriteString("</ul>\n")
+            state = stateDefault
          } else {
-            if len(line) >= codeBlockIndent {
-               line = line[codeBlockIndent:]
+            ordText, isOrd := isOrderedListLine(line)
+            unordText, isUnord := isUnorderedListLine(line)
+            if isUnord {
+               result.WriteString(renderListLi(unordText))
+               state = stateUnorderedList
+            } else if isOrd && isIndented(line) {
+               result.WriteString("<ol>")
+               result.WriteString(renderListLi(ordText))
+               state = stateUnorderedListNestedOL
+            } else if isOrd {
+               result.WriteString("</ul>")
+               result.WriteString("<ol>")
+               result.WriteString(renderListLi(ordText))
+               state = stateOrderedList
+            } else if indent, ok := isCodeFence(line); ok {
+               result.WriteString("</ul>")
+               codeBlockIndent = indent
+               codeBlockReturnState = stateDefault
+               state = stateCodeBlock
+            } else {
+               result.WriteString("</ul>")
+               if strings.TrimSpace(line) == "---" {
+                  result.WriteString("<hr>\n")
+               } else {
+                  result.WriteString(renderInline(line))
+                  result.WriteString("\n")
+               }
+               state = stateDefault
             }
-            codeLines = append(codeLines, line)
-         }
-      case stateUnorderedListCodeBlock:
-         if _, ok := isCodeFence(line); ok {
-            result.WriteString("<pre>")
-            result.WriteString(strings.Join(codeLines, "\n"))
-            result.WriteString("</pre>\n")
-            codeLines = nil
-            state = stateUnorderedList
-         } else {
-            if len(line) >= codeBlockIndent {
-               line = line[codeBlockIndent:]
-            }
-            codeLines = append(codeLines, line)
          }
       }
    }
 
    switch state {
-   case stateCodeBlock, stateOrderedListCodeBlock, stateUnorderedListCodeBlock:
+   case stateCodeBlock:
       result.WriteString("<pre>")
       result.WriteString(strings.Join(codeLines, "\n"))
       result.WriteString("</pre>\n")
-   case stateOrderedList:
+   case stateOrderedList, stateOrderedListPending:
       result.WriteString("</ol>")
-   case stateUnorderedList:
+   case stateUnorderedList, stateUnorderedListPending:
       result.WriteString("</ul>")
+   case stateOrderedListNestedUL:
+      result.WriteString("</ul></ol>")
+   case stateUnorderedListNestedOL:
+      result.WriteString("</ol></ul>")
    }
 
    return result.String()
