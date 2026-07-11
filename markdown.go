@@ -17,6 +17,10 @@ const (
    stateUnorderedListPending
 )
 
+func closeLi(b *strings.Builder) {
+   b.WriteString("</li>")
+}
+
 func isBlank(line string) bool {
    return strings.TrimSpace(line) == ""
 }
@@ -53,8 +57,16 @@ func isUnorderedListLine(line string) (string, bool) {
    if len(rest) == 0 || rest[0] != '*' {
       return "", false
    }
-   rest = strings.TrimLeft(rest[1:], " ")
-   return rest, true
+   content := strings.TrimLeft(rest[1:], " ")
+   if len(content) > 0 && content[len(content)-1] == '*' {
+      return "", false
+   }
+   return content, true
+}
+
+func openLi(b *strings.Builder, text string) {
+   b.WriteString("<li>")
+   b.WriteString(renderInline(text))
 }
 
 func renderInline(s string) string {
@@ -62,6 +74,7 @@ func renderInline(s string) string {
 
    var result strings.Builder
    inBold := false
+   inItalic := false
    inCode := false
    i := 0
    for i < len(s) {
@@ -81,6 +94,14 @@ func renderInline(s string) string {
          }
          inBold = !inBold
          i += 2
+      } else if s[i] == '*' {
+         if inItalic {
+            result.WriteString("</i>")
+         } else {
+            result.WriteString("<i>")
+         }
+         inItalic = !inItalic
+         i++
       } else {
          result.WriteByte(s[i])
          i++
@@ -89,19 +110,23 @@ func renderInline(s string) string {
    return result.String()
 }
 
-func renderListLi(text string) string {
-   return "<li>" + renderInline(text) + "</li>"
-}
-
 func renderMarkdown(s string) string {
    s = html.EscapeString(s)
 
    lines := strings.Split(s, "\n")
-   var result strings.Builder
+   result := &strings.Builder{}
    state := stateDefault
    var codeLines []string
    codeBlockIndent := 0
    codeBlockReturnState := stateDefault
+   liOpen := false
+
+   closeListIfOpen := func() {
+      if liOpen {
+         closeLi(result)
+         liOpen = false
+      }
+   }
 
    for _, line := range lines {
       switch state {
@@ -131,20 +156,23 @@ func renderMarkdown(s string) string {
             unordText, isUnord := isUnorderedListLine(line)
             if isOrd {
                result.WriteString("<ol>")
-               result.WriteString(renderListLi(ordText))
+               openLi(result, ordText)
+               liOpen = true
                state = stateOrderedList
             } else if isUnord {
                result.WriteString("<ul>")
-               result.WriteString(renderListLi(unordText))
+               openLi(result, unordText)
+               liOpen = true
                state = stateUnorderedList
             } else {
                result.WriteString(renderInline(line))
-               result.WriteString("\n")
+               result.WriteByte('\n')
             }
          }
 
       case stateOrderedList:
          if indent, ok := isCodeFence(line); ok {
+            closeListIfOpen()
             codeBlockIndent = indent
             codeBlockReturnState = stateOrderedList
             state = stateCodeBlock
@@ -152,25 +180,35 @@ func renderMarkdown(s string) string {
             ordText, isOrd := isOrderedListLine(line)
             unordText, isUnord := isUnorderedListLine(line)
             if isOrd {
-               result.WriteString(renderListLi(ordText))
+               closeListIfOpen()
+               openLi(result, ordText)
+               liOpen = true
             } else if isUnord && isIndented(line) {
+               closeListIfOpen()
                result.WriteString("<ul>")
-               result.WriteString(renderListLi(unordText))
+               openLi(result, unordText)
+               liOpen = true
                state = stateOrderedListNestedUL
             } else if isUnord {
-               result.WriteString("</ol>")
-               result.WriteString("<ul>")
-               result.WriteString(renderListLi(unordText))
+               closeListIfOpen()
+               result.WriteString("</ol><ul>")
+               openLi(result, unordText)
+               liOpen = true
                state = stateUnorderedList
             } else if isBlank(line) {
+               closeListIfOpen()
                state = stateOrderedListPending
+            } else if isIndented(line) {
+               result.WriteString("<br>\n")
+               result.WriteString(renderInline(strings.TrimLeft(line, " \t")))
             } else {
+               closeListIfOpen()
                result.WriteString("</ol>")
                if strings.TrimSpace(line) == "---" {
                   result.WriteString("<hr>\n")
                } else {
                   result.WriteString(renderInline(line))
-                  result.WriteString("\n")
+                  result.WriteByte('\n')
                }
                state = stateDefault
             }
@@ -178,6 +216,7 @@ func renderMarkdown(s string) string {
 
       case stateUnorderedList:
          if indent, ok := isCodeFence(line); ok {
+            closeListIfOpen()
             codeBlockIndent = indent
             codeBlockReturnState = stateUnorderedList
             state = stateCodeBlock
@@ -185,25 +224,35 @@ func renderMarkdown(s string) string {
             ordText, isOrd := isOrderedListLine(line)
             unordText, isUnord := isUnorderedListLine(line)
             if isUnord {
-               result.WriteString(renderListLi(unordText))
+               closeListIfOpen()
+               openLi(result, unordText)
+               liOpen = true
             } else if isOrd && isIndented(line) {
+               closeListIfOpen()
                result.WriteString("<ol>")
-               result.WriteString(renderListLi(ordText))
+               openLi(result, ordText)
+               liOpen = true
                state = stateUnorderedListNestedOL
             } else if isOrd {
-               result.WriteString("</ul>")
-               result.WriteString("<ol>")
-               result.WriteString(renderListLi(ordText))
+               closeListIfOpen()
+               result.WriteString("</ul><ol>")
+               openLi(result, ordText)
+               liOpen = true
                state = stateOrderedList
             } else if isBlank(line) {
+               closeListIfOpen()
                state = stateUnorderedListPending
+            } else if isIndented(line) {
+               result.WriteString("<br>\n")
+               result.WriteString(renderInline(strings.TrimLeft(line, " \t")))
             } else {
+               closeListIfOpen()
                result.WriteString("</ul>")
                if strings.TrimSpace(line) == "---" {
                   result.WriteString("<hr>\n")
                } else {
                   result.WriteString(renderInline(line))
-                  result.WriteString("\n")
+                  result.WriteByte('\n')
                }
                state = stateDefault
             }
@@ -211,28 +260,38 @@ func renderMarkdown(s string) string {
 
       case stateOrderedListNestedUL:
          if indent, ok := isCodeFence(line); ok {
+            closeListIfOpen()
             codeBlockIndent = indent
             codeBlockReturnState = stateOrderedListNestedUL
             state = stateCodeBlock
          } else {
-            unordText, isUnord := isUnorderedListLine(line)
             ordText, isOrd := isOrderedListLine(line)
+            unordText, isUnord := isUnorderedListLine(line)
             if isUnord {
-               result.WriteString(renderListLi(unordText))
+               closeListIfOpen()
+               openLi(result, unordText)
+               liOpen = true
             } else if isOrd && !isIndented(line) {
+               closeListIfOpen()
                result.WriteString("</ul>")
-               result.WriteString(renderListLi(ordText))
+               openLi(result, ordText)
+               liOpen = true
                state = stateOrderedList
             } else if isBlank(line) {
+               closeListIfOpen()
                result.WriteString("</ul>")
                state = stateOrderedListPending
+            } else if isIndented(line) {
+               result.WriteString("<br>\n")
+               result.WriteString(renderInline(strings.TrimLeft(line, " \t")))
             } else {
+               closeListIfOpen()
                result.WriteString("</ul></ol>")
                if strings.TrimSpace(line) == "---" {
                   result.WriteString("<hr>\n")
                } else {
                   result.WriteString(renderInline(line))
-                  result.WriteString("\n")
+                  result.WriteByte('\n')
                }
                state = stateDefault
             }
@@ -240,6 +299,7 @@ func renderMarkdown(s string) string {
 
       case stateUnorderedListNestedOL:
          if indent, ok := isCodeFence(line); ok {
+            closeListIfOpen()
             codeBlockIndent = indent
             codeBlockReturnState = stateUnorderedListNestedOL
             state = stateCodeBlock
@@ -247,21 +307,30 @@ func renderMarkdown(s string) string {
             ordText, isOrd := isOrderedListLine(line)
             unordText, isUnord := isUnorderedListLine(line)
             if isOrd {
-               result.WriteString(renderListLi(ordText))
+               closeListIfOpen()
+               openLi(result, ordText)
+               liOpen = true
             } else if isUnord && !isIndented(line) {
+               closeListIfOpen()
                result.WriteString("</ol>")
-               result.WriteString(renderListLi(unordText))
+               openLi(result, unordText)
+               liOpen = true
                state = stateUnorderedList
             } else if isBlank(line) {
+               closeListIfOpen()
                result.WriteString("</ol>")
                state = stateUnorderedListPending
+            } else if isIndented(line) {
+               result.WriteString("<br>\n")
+               result.WriteString(renderInline(strings.TrimLeft(line, " \t")))
             } else {
+               closeListIfOpen()
                result.WriteString("</ol></ul>")
                if strings.TrimSpace(line) == "---" {
                   result.WriteString("<hr>\n")
                } else {
                   result.WriteString(renderInline(line))
-                  result.WriteString("\n")
+                  result.WriteByte('\n')
                }
                state = stateDefault
             }
@@ -275,17 +344,23 @@ func renderMarkdown(s string) string {
             ordText, isOrd := isOrderedListLine(line)
             unordText, isUnord := isUnorderedListLine(line)
             if isOrd {
-               result.WriteString(renderListLi(ordText))
+               openLi(result, ordText)
+               liOpen = true
                state = stateOrderedList
             } else if isUnord && isIndented(line) {
                result.WriteString("<ul>")
-               result.WriteString(renderListLi(unordText))
+               openLi(result, unordText)
+               liOpen = true
                state = stateOrderedListNestedUL
             } else if isUnord {
-               result.WriteString("</ol>")
-               result.WriteString("<ul>")
-               result.WriteString(renderListLi(unordText))
+               result.WriteString("</ol><ul>")
+               openLi(result, unordText)
+               liOpen = true
                state = stateUnorderedList
+            } else if isIndented(line) {
+               openLi(result, strings.TrimLeft(line, " \t"))
+               liOpen = true
+               state = stateOrderedList
             } else if indent, ok := isCodeFence(line); ok {
                result.WriteString("</ol>")
                codeBlockIndent = indent
@@ -297,7 +372,7 @@ func renderMarkdown(s string) string {
                   result.WriteString("<hr>\n")
                } else {
                   result.WriteString(renderInline(line))
-                  result.WriteString("\n")
+                  result.WriteByte('\n')
                }
                state = stateDefault
             }
@@ -311,17 +386,23 @@ func renderMarkdown(s string) string {
             ordText, isOrd := isOrderedListLine(line)
             unordText, isUnord := isUnorderedListLine(line)
             if isUnord {
-               result.WriteString(renderListLi(unordText))
+               openLi(result, unordText)
+               liOpen = true
                state = stateUnorderedList
             } else if isOrd && isIndented(line) {
                result.WriteString("<ol>")
-               result.WriteString(renderListLi(ordText))
+               openLi(result, ordText)
+               liOpen = true
                state = stateUnorderedListNestedOL
             } else if isOrd {
-               result.WriteString("</ul>")
-               result.WriteString("<ol>")
-               result.WriteString(renderListLi(ordText))
+               result.WriteString("</ul><ol>")
+               openLi(result, ordText)
+               liOpen = true
                state = stateOrderedList
+            } else if isIndented(line) {
+               openLi(result, strings.TrimLeft(line, " \t"))
+               liOpen = true
+               state = stateUnorderedList
             } else if indent, ok := isCodeFence(line); ok {
                result.WriteString("</ul>")
                codeBlockIndent = indent
@@ -333,13 +414,15 @@ func renderMarkdown(s string) string {
                   result.WriteString("<hr>\n")
                } else {
                   result.WriteString(renderInline(line))
-                  result.WriteString("\n")
+                  result.WriteByte('\n')
                }
                state = stateDefault
             }
          }
       }
    }
+
+   closeListIfOpen()
 
    switch state {
    case stateCodeBlock:
