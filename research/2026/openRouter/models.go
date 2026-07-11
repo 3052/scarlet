@@ -3,11 +3,21 @@ package main
 import (
    "encoding/json"
    "io"
-   "math"
    "net/http"
    "sort"
    "strconv"
 )
+
+func average(values []float64) float64 {
+   if len(values) == 0 {
+      return 0
+   }
+   sum := 0.0
+   for _, v := range values {
+      sum += v
+   }
+   return sum / float64(len(values))
+}
 
 // ============================================================================
 // Helpers
@@ -25,6 +35,18 @@ func getFloat(m map[string]interface{}, key string) float64 {
    return 0
 }
 
+func getInt64(m map[string]interface{}, key string) int64 {
+   if v, ok := m[key]; ok {
+      switch n := v.(type) {
+      case float64:
+         return int64(n)
+      case int64:
+         return n
+      }
+   }
+   return 0
+}
+
 func getMap(m map[string]interface{}, key string) map[string]interface{} {
    if v, ok := m[key].(map[string]interface{}); ok {
       return v
@@ -37,20 +59,6 @@ func getString(m map[string]interface{}, key string) string {
       return v
    }
    return ""
-}
-
-func median(values []float64) float64 {
-   if len(values) == 0 {
-      return 0
-   }
-   sorted := make([]float64, len(values))
-   copy(sorted, values)
-   sort.Float64s(sorted)
-   n := len(sorted)
-   if n%2 == 1 {
-      return sorted[n/2]
-   }
-   return (sorted[n/2-1] + sorted[n/2]) / 2
 }
 
 // ============================================================================
@@ -87,31 +95,27 @@ func FetchAndParse(url string) (*APIResponse, error) {
 }
 
 type ModelData struct {
-   Slug             string
-   Name             string
-   CreatedAt        string
-   Intelligence     float64
-   Coding           float64
-   Agentic          float64
-   BenefitAA        float64
-   EloValues        []float64
-   BenefitDA        float64
-   InputPrice       float64
-   OutputPrice      float64
-   CacheReadPrice   float64
-   PromptTokens     float64
-   CompletionTokens float64
-   CachedTokens     float64
-   CostPerM         float64
-   HasAA            bool
-   HasDA            bool
-   HasPricing       bool
+   Slug           string
+   Name           string
+   CreatedAt      string
+   ContextLength  int64
+   Intelligence   float64
+   Coding         float64
+   Agentic        float64
+   BenefitAA      float64
+   EloValues      []float64
+   BenefitDA      float64
+   InputPrice     float64
+   OutputPrice    float64
+   CacheReadPrice float64
+   HasAA          bool
+   HasDA          bool
+   HasPricing     bool
 }
 
 func BuildModelData(apiResp *APIResponse) []ModelData {
    models := apiResp.Data.Models
    benchmarks := apiResp.Data.Benchmarks
-   analytics := apiResp.Data.Analytics
 
    var rows []ModelData
    for _, m := range models {
@@ -121,9 +125,10 @@ func BuildModelData(apiResp *APIResponse) []ModelData {
          continue
       }
       row := ModelData{
-         Slug:      slug,
-         Name:      name,
-         CreatedAt: getString(m, "created_at"),
+         Slug:          slug,
+         Name:          name,
+         CreatedAt:     getString(m, "created_at"),
+         ContextLength: getInt64(m, "context_length"),
       }
 
       // Benchmarks
@@ -133,7 +138,7 @@ func BuildModelData(apiResp *APIResponse) []ModelData {
             row.Coding = getFloat(aa, "coding_index")
             row.Agentic = getFloat(aa, "agentic_index")
             if row.Intelligence > 0 || row.Coding > 0 || row.Agentic > 0 {
-               row.BenefitAA = row.Intelligence + row.Coding + row.Agentic
+               row.BenefitAA = average([]float64{row.Intelligence, row.Coding, row.Agentic})
                row.HasAA = true
             }
          }
@@ -145,7 +150,7 @@ func BuildModelData(apiResp *APIResponse) []ModelData {
                   }
                }
                if len(row.EloValues) > 0 {
-                  row.BenefitDA = median(row.EloValues)
+                  row.BenefitDA = average(row.EloValues)
                   row.HasDA = true
                }
             }
@@ -170,62 +175,21 @@ func BuildModelData(apiResp *APIResponse) []ModelData {
          }
       }
 
-      // Analytics
-      if a, ok := analytics[slug]; ok {
-         row.PromptTokens = getFloat(a, "total_prompt_tokens")
-         row.CompletionTokens = getFloat(a, "total_completion_tokens")
-         row.CachedTokens = getFloat(a, "total_native_tokens_cached")
-      }
-
-      // Cost: usage-weighted average $/M tokens
-      totalTokens := row.PromptTokens + row.CompletionTokens + row.CachedTokens
-      if totalTokens > 0 && row.HasPricing {
-         weightedCost := row.InputPrice*row.PromptTokens +
-            row.OutputPrice*row.CompletionTokens +
-            row.CacheReadPrice*row.CachedTokens
-         row.CostPerM = weightedCost / totalTokens
-      }
-
       rows = append(rows, row)
    }
    return rows
 }
 
 type ResultRow struct {
-   Model       ModelData
-   Benefit     float64
-   BenefitNorm float64
-   CostNorm    float64
-   Value       float64
+   Model   ModelData
+   Benefit float64
 }
 
 // ============================================================================
-// Filter & Compute
+// Filter & Sort
 // ============================================================================
 
-func FilterAndCompute(rows []ModelData, benefitFlag string) []ResultRow {
-   // Filter
-   var filtered []ModelData
-   for _, r := range rows {
-      if benefitFlag == "aa" && !r.HasAA {
-         continue
-      }
-      if benefitFlag == "da" && !r.HasDA {
-         continue
-      }
-      if !r.HasPricing || r.CostPerM <= 0 {
-         continue
-      }
-      filtered = append(filtered, r)
-   }
-
-   // Compute min/max
-   var benefitMin, benefitMax, costMin, costMax float64
-   benefitMin = math.Inf(1)
-   benefitMax = math.Inf(-1)
-   costMin = math.Inf(1)
-   costMax = math.Inf(-1)
-
+func FilterAndSort(rows []ModelData, benefitFlag string) []ResultRow {
    getBenefit := func(r ModelData) float64 {
       if benefitFlag == "aa" {
          return r.BenefitAA
@@ -233,46 +197,26 @@ func FilterAndCompute(rows []ModelData, benefitFlag string) []ResultRow {
       return r.BenefitDA
    }
 
-   for _, r := range filtered {
-      b := getBenefit(r)
-      if b < benefitMin {
-         benefitMin = b
-      }
-      if b > benefitMax {
-         benefitMax = b
-      }
-      if r.CostPerM < costMin {
-         costMin = r.CostPerM
-      }
-      if r.CostPerM > costMax {
-         costMax = r.CostPerM
-      }
-   }
-
-   // Compute value = benefit_norm - cost_norm
    var results []ResultRow
-   for _, r := range filtered {
-      b := getBenefit(r)
-      var benefitNorm, costNorm float64
-      if benefitMax > benefitMin {
-         benefitNorm = (b - benefitMin) / (benefitMax - benefitMin)
+   for _, r := range rows {
+      if benefitFlag == "aa" && !r.HasAA {
+         continue
       }
-      if costMax > costMin {
-         costNorm = (r.CostPerM - costMin) / (costMax - costMin)
+      if benefitFlag == "da" && !r.HasDA {
+         continue
       }
-      value := benefitNorm - costNorm
+      if !r.HasPricing {
+         continue
+      }
       results = append(results, ResultRow{
-         Model:       r,
-         Benefit:     b,
-         BenefitNorm: benefitNorm,
-         CostNorm:    costNorm,
-         Value:       value,
+         Model:   r,
+         Benefit: getBenefit(r),
       })
    }
 
-   // Sort descending by value
+   // Sort descending by benefit
    sort.Slice(results, func(i, j int) bool {
-      return results[i].Value > results[j].Value
+      return results[i].Benefit > results[j].Benefit
    })
 
    return results
