@@ -56,7 +56,7 @@ body {
 }
 
 .file-attachment summary {
-    font-space: monospace;
+    font-family: monospace;
 }
 
 .file-attachment pre {
