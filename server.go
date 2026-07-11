@@ -5,6 +5,7 @@ import (
    _ "embed"
    "encoding/json"
    "fmt"
+   "html"
    "io"
    "log"
    "net/http"
@@ -63,7 +64,8 @@ func handleRoot(w http.ResponseWriter, r *http.Request, cfg *AppConfig, headerHT
    if r.Method == http.MethodPost {
       r.ParseMultipartForm(10 << 20) // 10MB limit
 
-      userText := r.FormValue("text")
+      /* strip CRLF to LF */
+      userText := strings.ReplaceAll(r.FormValue("text"), "\r\n", "\n")
       var files []FileAttachment
 
       if fileHeaders := r.MultipartForm.File["files"]; len(fileHeaders) > 0 {
@@ -102,7 +104,7 @@ func handleRoot(w http.ResponseWriter, r *http.Request, cfg *AppConfig, headerHT
 
    for _, msg := range messages {
       if msg.Role == "system" {
-         fmt.Fprintf(w, `<div class="msg %s">%s</div>`+"\n", msg.Role, escapeHTML(msg.Content))
+         fmt.Fprintf(w, `<div class="msg %s">%s</div>`+"\n", msg.Role, html.EscapeString(msg.Content))
       } else if msg.Role == "user" {
          if msg.ReasoningContent != "" {
             fmt.Fprintf(w, `<details class="reasoning"><summary>Reasoning</summary>%s</details>`, renderMarkdown(msg.ReasoningContent))
@@ -111,7 +113,7 @@ func handleRoot(w http.ResponseWriter, r *http.Request, cfg *AppConfig, headerHT
             fmt.Fprintf(w, `<div class="user-text">%s</div>`+"\n", renderMarkdown(msg.Content))
          }
          for _, f := range msg.Files {
-            fmt.Fprintf(w, "\n<details class=\"file-attachment\">\n<summary>%s</summary>\n<pre>%s</pre>\n</details>\n", escapeHTML(f.Filename), escapeHTML(strings.TrimRight(f.Content, "\n")))
+            fmt.Fprintf(w, "\n<details class=\"file-attachment\">\n<summary>%s</summary>\n<pre>%s</pre>\n</details>\n", html.EscapeString(f.Filename), html.EscapeString(strings.TrimRight(f.Content, "\n")))
          }
       } else {
          if msg.ReasoningContent != "" {
