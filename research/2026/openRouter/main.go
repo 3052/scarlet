@@ -1,0 +1,69 @@
+package main
+
+import (
+   "flag"
+   "fmt"
+   "os"
+)
+
+func main() {
+   benefitFlag := flag.String("benefit", "", "Benefit source: 'aa' (intelligence+coding+agentic sum) or 'da' (median ELO). REQUIRED.")
+   flag.Parse()
+
+   if *benefitFlag != "aa" && *benefitFlag != "da" {
+      fmt.Fprintf(os.Stderr, "Error: --benefit is required (must be 'aa' or 'da')\n")
+      fmt.Fprintf(os.Stderr, "Usage: %s --benefit=aa|da\n", os.Args[0])
+      flag.Usage()
+      os.Exit(1)
+   }
+
+   // Fetch
+   url := "https://openrouter.ai/api/frontend/v1/models/find?active=true"
+   fmt.Fprintf(os.Stderr, "Fetching from %s ...\n", url)
+   apiResp, err := FetchAndParse(url)
+   if err != nil {
+      fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+      os.Exit(1)
+   }
+
+   // Build model data
+   rows := BuildModelData(apiResp)
+
+   // Filter & compute
+   results := FilterAndCompute(rows, *benefitFlag)
+
+   if len(results) == 0 {
+      fmt.Fprintf(os.Stderr, "No models match the criteria\n")
+      os.Exit(1)
+   }
+
+   // Print human-readable output
+   for i, r := range results {
+      if i > 0 {
+         fmt.Println()
+      }
+      fmt.Printf("Rank: %d\n", i+1)
+      fmt.Printf("Model: %s\n", r.Model.Name)
+      fmt.Printf("Slug: %s\n", r.Model.Slug)
+      fmt.Printf("Created: %s\n", r.Model.CreatedAt)
+      if *benefitFlag == "aa" {
+         fmt.Printf("Intelligence: %.1f\n", r.Model.Intelligence)
+         fmt.Printf("Coding: %.1f\n", r.Model.Coding)
+         fmt.Printf("Agentic: %.1f\n", r.Model.Agentic)
+         fmt.Printf("Benefit (AA sum): %.1f\n", r.Benefit)
+      } else {
+         fmt.Printf("ELO categories: %d\n", len(r.Model.EloValues))
+         fmt.Printf("Benefit (DA median ELO): %.1f\n", r.Benefit)
+      }
+      fmt.Printf("Input price: $%.2f / M tokens\n", r.Model.InputPrice)
+      fmt.Printf("Output price: $%.2f / M tokens\n", r.Model.OutputPrice)
+      fmt.Printf("Cache read price: $%.2f / M tokens\n", r.Model.CacheReadPrice)
+      fmt.Printf("Cost: $%.2f / M tokens\n", r.Model.CostPerM)
+      fmt.Printf("Benefit (normalized): %.4f\n", r.BenefitNorm)
+      fmt.Printf("Cost (normalized): %.4f\n", r.CostNorm)
+      fmt.Printf("Value: %.4f\n", r.Value)
+   }
+
+   fmt.Fprintf(os.Stderr, "\nRanked %d models (out of %d total, --benefit=%s)\n",
+      len(results), len(rows), *benefitFlag)
+}
