@@ -8,10 +8,22 @@ import (
 
 func main() {
    maxOutput := flag.Float64("output", 0,
-      "max $/M tokens (0 = no limit)")
+      "max $/M output tokens (0 = no limit)")
    openOnly := flag.Bool("open", false,
       "only show models with open weights")
+   sortBy := flag.String("sort", "",
+      "sort key (required): elo, intelligence, coding, agentic")
    flag.Parse()
+
+   // Validate -sort
+   switch *sortBy {
+   case "elo", "intelligence", "coding", "agentic":
+      // ok
+   default:
+      fmt.Fprintf(os.Stderr,
+         "Error: -sort is required and must be one of: elo, intelligence, coding, agentic\n")
+      os.Exit(2)
+   }
 
    // Fetch
    url := "https://openrouter.ai/api/frontend/v1/models/find?active=true"
@@ -47,32 +59,33 @@ func main() {
       rows = filtered
    }
 
-   // Filter & sort
-   results := FilterAndSort(rows)
+   // Filter & sort by the chosen key
+   results := FilterAndSort(rows, *sortBy)
 
    if len(results) == 0 {
-      fmt.Fprintf(os.Stderr, "No models match the criteria\n")
+      fmt.Fprintln(os.Stderr, "No models match the criteria")
       os.Exit(1)
    }
 
    // Print sort indicator
-   fmt.Printf("Sorted by: max(intelligence, coding, agentic) descending\n")
+   fmt.Printf("Sorted by: %s descending\n", *sortBy)
 
    // Print human-readable output
    for _, r := range results {
       fmt.Println()
-      fmt.Printf("Model: %s\n", r.Model.Name)
-      fmt.Printf("Created: %s\n", r.Model.CreatedAt)
-      fmt.Printf("Context length: %d tokens\n", r.Model.ContextLength)
-      if r.Model.HfSlug != "" {
-         fmt.Printf("Model weights: %s\n", r.Model.HfSlug)
+      fmt.Printf("Model: %s\n", r.Name)
+      fmt.Printf("Created: %s\n", r.CreatedAt)
+      fmt.Printf("Context length: %d tokens\n", r.ContextLength)
+      if r.HfSlug != "" {
+         fmt.Printf("Model weights: %s\n", r.HfSlug)
       }
-      fmt.Printf("Intelligence: %.1f\n", r.Model.Intelligence)
-      fmt.Printf("Coding: %.1f\n", r.Model.Coding)
-      fmt.Printf("Agentic: %.1f\n", r.Model.Agentic)
-      fmt.Printf("Input price: $%.2f / M tokens\n", r.Model.InputPrice)
-      fmt.Printf("Output price: $%.2f / M tokens\n", r.Model.OutputPrice)
-      fmt.Printf("Cache read price: $%.2f / M tokens\n", r.Model.CacheReadPrice)
+      fmt.Printf("Arena ELO: %.1f\n", r.Elo)
+      fmt.Printf("Intelligence: %.1f\n", r.Intelligence)
+      fmt.Printf("Coding: %.1f\n", r.Coding)
+      fmt.Printf("Agentic: %.1f\n", r.Agentic)
+      fmt.Printf("Input price: $%.2f / M tokens\n", r.InputPrice)
+      fmt.Printf("Output price: $%.2f / M tokens\n", r.OutputPrice)
+      fmt.Printf("Cache read price: $%.2f / M tokens\n", r.CacheReadPrice)
    }
 
    fmt.Fprintf(os.Stderr, "\nRanked %d models (out of %d total)\n",

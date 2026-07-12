@@ -8,69 +8,49 @@ import (
    "strconv"
 )
 
-// ============================================================================
-// Helpers
-// ============================================================================
-
-func getFloat(m map[string]interface{}, key string) float64 {
-   if v, ok := m[key]; ok {
-      switch n := v.(type) {
-      case float64:
-         return n
-      case int64:
-         return float64(n)
-      }
+// parsePricePerMillion converts a "$/token" string to "$/M tokens".
+// Returns 0 for missing/zero/invalid (treated as "no value").
+func parsePricePerMillion(s string) float64 {
+   if p, err := strconv.ParseFloat(s, 64); err == nil && p > 0 {
+      return p * 1e6
    }
    return 0
 }
 
-func getInt64(m map[string]interface{}, key string) int64 {
-   if v, ok := m[key]; ok {
-      switch n := v.(type) {
-      case float64:
-         return int64(n)
-      case int64:
-         return n
-      }
+// ============================================================================
+// Filter & Sort
+// ============================================================================
+
+// sortValue returns (value, present) for the requested sort key.
+// "present" is true only when the value is > 0.
+func sortValue(r ModelData, key string) (float64, bool) {
+   switch key {
+   case "elo":
+      return r.Elo, r.Elo > 0
+   case "intelligence":
+      return r.Intelligence, r.Intelligence > 0
+   case "coding":
+      return r.Coding, r.Coding > 0
+   case "agentic":
+      return r.Agentic, r.Agentic > 0
    }
-   return 0
+   return 0, false
 }
 
-func getMap(m map[string]interface{}, key string) map[string]interface{} {
-   if v, ok := m[key].(map[string]interface{}); ok {
-      return v
-   }
-   return nil
-}
-
-func getString(m map[string]interface{}, key string) string {
-   if v, ok := m[key].(string); ok {
-      return v
-   }
-   return ""
-}
-
-func maxOf(values ...float64) float64 {
-   if len(values) == 0 {
-      return 0
-   }
-   m := values[0]
-   for _, v := range values[1:] {
-      if v > m {
-         m = v
-      }
-   }
-   return m
+type AABenchmark struct {
+   IntelligenceIndex float64 `json:"intelligence_index"`
+   CodingIndex       float64 `json:"coding_index"`
+   AgenticIndex      float64 `json:"agentic_index"`
 }
 
 // ============================================================================
-// Types
+// API response types (only the fields we read)
 // ============================================================================
 
 type APIResponse struct {
    Data struct {
-      Models     []map[string]interface{}          `json:"models"`
-      Benchmarks map[string]map[string]interface{} `json:"benchmarks"`
+      Models     []Model              `json:"models"`
+      Benchmarks map[string]Benchmark `json:"benchmarks"`
    } `json:"data"`
 }
 
@@ -95,106 +75,105 @@ func FetchAndParse(url string) (*APIResponse, error) {
    return &apiResp, nil
 }
 
+type Benchmark struct {
+   AA *AABenchmark `json:"aa"`
+   DA *DABenchmark `json:"da"`
+}
+
+type DABenchmark struct {
+   MaxElo float64 `json:"max_elo"`
+}
+
+type Endpoint struct {
+   Pricing Pricing `json:"pricing"`
+}
+
+type Model struct {
+   Permaslug     string   `json:"permaslug"`
+   Name          string   `json:"name"`
+   CreatedAt     string   `json:"created_at"`
+   ContextLength int64    `json:"context_length"`
+   HfSlug        string   `json:"hf_slug"`
+   Endpoint      Endpoint `json:"endpoint"`
+}
+
+// ============================================================================
+// Flattened row used downstream
+// ============================================================================
+
 type ModelData struct {
    Slug           string
    Name           string
    CreatedAt      string
    ContextLength  int64
    HfSlug         string
+   Elo            float64
    Intelligence   float64
    Coding         float64
    Agentic        float64
-   BenefitAA      float64
-   InputPrice     float64
-   OutputPrice    float64
-   CacheReadPrice float64
-   HasAA          bool
-   HasPricing     bool
+   InputPrice     float64 // $/M tokens
+   OutputPrice    float64 // $/M tokens
+   CacheReadPrice float64 // $/M tokens
 }
 
 func BuildModelData(apiResp *APIResponse) []ModelData {
-   models := apiResp.Data.Models
-   benchmarks := apiResp.Data.Benchmarks
-
    var rows []ModelData
-   for _, m := range models {
-      slug := getString(m, "permaslug")
-      name := getString(m, "name")
-      if slug == "" {
+   for _, m := range apiResp.Data.Models {
+      if m.Permaslug == "" {
          continue
       }
       row := ModelData{
-         Slug:          slug,
-         Name:          name,
-         CreatedAt:     getString(m, "created_at"),
-         ContextLength: getInt64(m, "context_length"),
-         HfSlug:        getString(m, "hf_slug"),
+         Slug:           m.Permaslug,
+         Name:           m.Name,
+         CreatedAt:      m.CreatedAt,
+         ContextLength:  m.ContextLength,
+         HfSlug:         m.HfSlug,
+         InputPrice:     parsePricePerMillion(m.Endpoint.Pricing.Prompt),
+         OutputPrice:    parsePricePerMillion(m.Endpoint.Pricing.Completion),
+         CacheReadPrice: parsePricePerMillion(m.Endpoint.Pricing.InputCacheRead),
       }
-
-      // Benchmarks
-      if b, ok := benchmarks[slug]; ok {
-         if aa := getMap(b, "aa"); aa != nil {
-            row.Intelligence = getFloat(aa, "intelligence_index")
-            row.Coding = getFloat(aa, "coding_index")
-            row.Agentic = getFloat(aa, "agentic_index")
-            if row.Intelligence > 0 || row.Coding > 0 || row.Agentic > 0 {
-               row.BenefitAA = maxOf(row.Intelligence, row.Coding, row.Agentic)
-               row.HasAA = true
-            }
+      if b, ok := apiResp.Data.Benchmarks[m.Permaslug]; ok {
+         if b.AA != nil {
+            row.Intelligence = b.AA.IntelligenceIndex
+            row.Coding = b.AA.CodingIndex
+            row.Agentic = b.AA.AgenticIndex
+         }
+         if b.DA != nil {
+            row.Elo = b.DA.MaxElo
          }
       }
-
-      // Pricing — convert $/token to $/M tokens for readability
-      if ep := getMap(m, "endpoint"); ep != nil {
-         if pricing := getMap(ep, "pricing"); pricing != nil {
-            if p, err := strconv.ParseFloat(getString(pricing, "prompt"), 64); err == nil && p > 0 {
-               row.InputPrice = p * 1e6
-            }
-            if p, err := strconv.ParseFloat(getString(pricing, "completion"), 64); err == nil && p > 0 {
-               row.OutputPrice = p * 1e6
-            }
-            if p, err := strconv.ParseFloat(getString(pricing, "input_cache_read"), 64); err == nil && p > 0 {
-               row.CacheReadPrice = p * 1e6
-            }
-            if row.InputPrice > 0 || row.OutputPrice > 0 {
-               row.HasPricing = true
-            }
-         }
-      }
-
       rows = append(rows, row)
    }
    return rows
 }
 
-type ResultRow struct {
-   Model   ModelData
-   Benefit float64
-}
-
-// ============================================================================
-// Filter & Sort
-// ============================================================================
-
-func FilterAndSort(rows []ModelData) []ResultRow {
-   var results []ResultRow
+func FilterAndSort(rows []ModelData, key string) []ModelData {
+   var results []ModelData
    for _, r := range rows {
-      if !r.HasAA {
+      // Pricing is always required.
+      if r.InputPrice == 0 && r.OutputPrice == 0 {
          continue
       }
-      if !r.HasPricing {
+      // The sort field must have a value.
+      if _, ok := sortValue(r, key); !ok {
          continue
       }
-      results = append(results, ResultRow{
-         Model:   r,
-         Benefit: r.BenefitAA,
-      })
+      results = append(results, r)
    }
 
-   // Sort descending by benefit
+   // Sort descending by the chosen key.
    sort.Slice(results, func(i, j int) bool {
-      return results[i].Benefit > results[j].Benefit
+      vi, _ := sortValue(results[i], key)
+      vj, _ := sortValue(results[j], key)
+      return vi > vj
    })
 
    return results
+}
+
+// Pricing values are strings like "0.0000025" (USD per token).
+type Pricing struct {
+   Prompt         string `json:"prompt"`
+   Completion     string `json:"completion"`
+   InputCacheRead string `json:"input_cache_read"`
 }
