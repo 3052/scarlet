@@ -128,6 +128,14 @@ func renderMarkdown(s string) string {
       }
    }
 
+   stripTrailingBr := func() {
+      out := result.String()
+      if strings.HasSuffix(out, "<br>\n") {
+         result.Reset()
+         result.WriteString(out[:len(out)-len("<br>\n")])
+      }
+   }
+
    for _, line := range lines {
       switch state {
       case stateCodeBlock:
@@ -146,6 +154,7 @@ func renderMarkdown(s string) string {
 
       case stateDefault:
          if indent, ok := isCodeFence(line); ok {
+            stripTrailingBr()
             codeBlockIndent = indent
             codeBlockReturnState = stateDefault
             state = stateCodeBlock
@@ -175,6 +184,7 @@ func renderMarkdown(s string) string {
       case stateOrderedList:
          if indent, ok := isCodeFence(line); ok {
             closeListIfOpen()
+            stripTrailingBr()
             codeBlockIndent = indent
             codeBlockReturnState = stateOrderedList
             state = stateCodeBlock
@@ -218,6 +228,7 @@ func renderMarkdown(s string) string {
       case stateUnorderedList:
          if indent, ok := isCodeFence(line); ok {
             closeListIfOpen()
+            stripTrailingBr()
             codeBlockIndent = indent
             codeBlockReturnState = stateUnorderedList
             state = stateCodeBlock
@@ -261,6 +272,7 @@ func renderMarkdown(s string) string {
       case stateOrderedListNestedUL:
          if indent, ok := isCodeFence(line); ok {
             closeListIfOpen()
+            stripTrailingBr()
             codeBlockIndent = indent
             codeBlockReturnState = stateOrderedListNestedUL
             state = stateCodeBlock
@@ -300,6 +312,7 @@ func renderMarkdown(s string) string {
       case stateUnorderedListNestedOL:
          if indent, ok := isCodeFence(line); ok {
             closeListIfOpen()
+            stripTrailingBr()
             codeBlockIndent = indent
             codeBlockReturnState = stateUnorderedListNestedOL
             state = stateCodeBlock
@@ -368,6 +381,7 @@ func renderMarkdown(s string) string {
             } else if indent, ok := isCodeFence(line); ok {
                closeListIfOpen()
                result.WriteString("</ol>")
+               stripTrailingBr()
                codeBlockIndent = indent
                codeBlockReturnState = stateDefault
                state = stateCodeBlock
@@ -416,6 +430,7 @@ func renderMarkdown(s string) string {
             } else if indent, ok := isCodeFence(line); ok {
                closeListIfOpen()
                result.WriteString("</ul>")
+               stripTrailingBr()
                codeBlockIndent = indent
                codeBlockReturnState = stateDefault
                state = stateCodeBlock
@@ -450,6 +465,8 @@ func renderMarkdown(s string) string {
    case stateUnorderedListNestedOL:
       result.WriteString("</ol></ul>")
    }
+
+   stripTrailingBr()
 
    return result.String()
 }

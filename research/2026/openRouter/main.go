@@ -7,8 +7,6 @@ import (
 )
 
 func main() {
-   maxOutput := flag.Float64("output", 0,
-      "max $/M output tokens (0 = no limit)")
    openOnly := flag.Bool("open", false,
       "only show models with open weights")
    sortBy := flag.String("sort", "",
@@ -20,9 +18,8 @@ func main() {
    case "elo", "intelligence", "coding", "agentic":
       // ok
    default:
-      fmt.Fprintf(os.Stderr,
-         "Error: -sort is required and must be one of: elo, intelligence, coding, agentic\n")
-      os.Exit(2)
+      flag.Usage()
+      return
    }
 
    // Fetch
@@ -36,17 +33,6 @@ func main() {
 
    // Build model data
    rows := BuildModelData(apiResp)
-
-   // Filter by max output price if specified
-   if *maxOutput > 0 {
-      var filtered []ModelData
-      for _, r := range rows {
-         if r.OutputPrice <= *maxOutput {
-            filtered = append(filtered, r)
-         }
-      }
-      rows = filtered
-   }
 
    // Filter by open weights if specified
    if *openOnly {
