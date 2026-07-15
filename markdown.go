@@ -17,10 +17,6 @@ const (
    stateUnorderedListPending
 )
 
-func closeLi(b *strings.Builder) {
-   b.WriteString("</li>")
-}
-
 func isBlank(line string) bool {
    return strings.TrimSpace(line) == ""
 }
@@ -110,363 +106,428 @@ func renderInline(s string) string {
    return result.String()
 }
 
+// renderMarkdown renders a complete markdown string to HTML (non-streaming).
 func renderMarkdown(s string) string {
    s = html.EscapeString(s)
-
    lines := strings.Split(s, "\n")
-   result := &strings.Builder{}
-   state := stateDefault
-   var codeLines []string
-   codeBlockIndent := 0
-   codeBlockReturnState := stateDefault
-   liOpen := false
-
-   closeListIfOpen := func() {
-      if liOpen {
-         closeLi(result)
-         liOpen = false
-      }
-   }
-
-   stripTrailingBr := func() {
-      out := result.String()
-      if strings.HasSuffix(out, "<br>\n") {
-         result.Reset()
-         result.WriteString(out[:len(out)-len("<br>\n")])
-      }
-   }
-
+   mr := newMarkdownRenderer()
+   var result strings.Builder
    for _, line := range lines {
-      switch state {
-      case stateCodeBlock:
-         if _, ok := isCodeFence(line); ok {
-            result.WriteString("<pre>")
-            result.WriteString(strings.Join(codeLines, "\n"))
-            result.WriteString("</pre>\n")
-            codeLines = nil
-            state = codeBlockReturnState
-         } else {
-            if len(line) >= codeBlockIndent {
-               line = line[codeBlockIndent:]
-            }
-            codeLines = append(codeLines, line)
-         }
+      result.WriteString(mr.renderLine(line))
+   }
+   result.WriteString(mr.flush())
+   out := result.String()
+   out = strings.TrimSuffix(out, "<br>\n")
+   return out
+}
 
-      case stateDefault:
-         if indent, ok := isCodeFence(line); ok {
-            stripTrailingBr()
-            codeBlockIndent = indent
-            codeBlockReturnState = stateDefault
-            state = stateCodeBlock
-         } else if strings.TrimSpace(line) == "---" {
-            result.WriteString("<hr>\n")
-         } else {
-            ordText, isOrd := isOrderedListLine(line)
-            unordText, isUnord := isUnorderedListLine(line)
-            if isOrd {
-               result.WriteString("<ol>")
-               openLi(result, ordText)
-               liOpen = true
-               state = stateOrderedList
-            } else if isUnord {
-               result.WriteString("<ul>")
-               openLi(result, unordText)
-               liOpen = true
-               state = stateUnorderedList
-            } else if isBlank(line) {
-               result.WriteString("<br>\n")
-            } else {
-               result.WriteString(renderInline(line))
-               result.WriteString("<br>\n")
-            }
-         }
+// markdownRenderer holds parser state across multiple lines,
+// enabling streaming (line-by-line) markdown rendering.
+type markdownRenderer struct {
+   state                int
+   codeLines            []string
+   codeBlockIndent      int
+   codeBlockReturnState int
+   liOpen               bool
+}
 
-      case stateOrderedList:
-         if indent, ok := isCodeFence(line); ok {
-            closeListIfOpen()
-            stripTrailingBr()
-            codeBlockIndent = indent
-            codeBlockReturnState = stateOrderedList
-            state = stateCodeBlock
-         } else {
-            ordText, isOrd := isOrderedListLine(line)
-            unordText, isUnord := isUnorderedListLine(line)
-            if isOrd {
-               closeListIfOpen()
-               openLi(result, ordText)
-               liOpen = true
-            } else if isUnord && isIndented(line) {
-               closeListIfOpen()
-               result.WriteString("<ul>")
-               openLi(result, unordText)
-               liOpen = true
-               state = stateOrderedListNestedUL
-            } else if isUnord {
-               closeListIfOpen()
-               result.WriteString("</ol><ul>")
-               openLi(result, unordText)
-               liOpen = true
-               state = stateUnorderedList
-            } else if isBlank(line) {
-               state = stateOrderedListPending
-            } else if isIndented(line) {
-               result.WriteString("<br>\n")
-               result.WriteString(renderInline(strings.TrimLeft(line, " \t")))
-            } else {
-               closeListIfOpen()
-               result.WriteString("</ol>")
-               if strings.TrimSpace(line) == "---" {
-                  result.WriteString("<hr>\n")
-               } else {
-                  result.WriteString(renderInline(line))
-                  result.WriteByte('\n')
-               }
-               state = stateDefault
-            }
-         }
+func newMarkdownRenderer() *markdownRenderer {
+   return &markdownRenderer{state: stateDefault}
+}
 
-      case stateUnorderedList:
-         if indent, ok := isCodeFence(line); ok {
-            closeListIfOpen()
-            stripTrailingBr()
-            codeBlockIndent = indent
-            codeBlockReturnState = stateUnorderedList
-            state = stateCodeBlock
-         } else {
-            ordText, isOrd := isOrderedListLine(line)
-            unordText, isUnord := isUnorderedListLine(line)
-            if isUnord {
-               closeListIfOpen()
-               openLi(result, unordText)
-               liOpen = true
-            } else if isOrd && isIndented(line) {
-               closeListIfOpen()
-               result.WriteString("<ol>")
-               openLi(result, ordText)
-               liOpen = true
-               state = stateUnorderedListNestedOL
-            } else if isOrd {
-               closeListIfOpen()
-               result.WriteString("</ul><ol>")
-               openLi(result, ordText)
-               liOpen = true
-               state = stateOrderedList
-            } else if isBlank(line) {
-               state = stateUnorderedListPending
-            } else if isIndented(line) {
-               result.WriteString("<br>\n")
-               result.WriteString(renderInline(strings.TrimLeft(line, " \t")))
-            } else {
-               closeListIfOpen()
-               result.WriteString("</ul>")
-               if strings.TrimSpace(line) == "---" {
-                  result.WriteString("<hr>\n")
-               } else {
-                  result.WriteString(renderInline(line))
-                  result.WriteByte('\n')
-               }
-               state = stateDefault
-            }
-         }
+func (mr *markdownRenderer) closeListIfOpen(b *strings.Builder) {
+   if mr.liOpen {
+      b.WriteString("</li>")
+      mr.liOpen = false
+   }
+}
 
-      case stateOrderedListNestedUL:
-         if indent, ok := isCodeFence(line); ok {
-            closeListIfOpen()
-            stripTrailingBr()
-            codeBlockIndent = indent
-            codeBlockReturnState = stateOrderedListNestedUL
-            state = stateCodeBlock
-         } else {
-            ordText, isOrd := isOrderedListLine(line)
-            unordText, isUnord := isUnorderedListLine(line)
-            if isUnord {
-               closeListIfOpen()
-               openLi(result, unordText)
-               liOpen = true
-            } else if isOrd && !isIndented(line) {
-               closeListIfOpen()
-               result.WriteString("</ul>")
-               openLi(result, ordText)
-               liOpen = true
-               state = stateOrderedList
-            } else if isBlank(line) {
-               closeListIfOpen()
-               result.WriteString("</ul>")
-               state = stateOrderedListPending
-            } else if isIndented(line) {
-               result.WriteString("<br>\n")
-               result.WriteString(renderInline(strings.TrimLeft(line, " \t")))
-            } else {
-               closeListIfOpen()
-               result.WriteString("</ul></ol>")
-               if strings.TrimSpace(line) == "---" {
-                  result.WriteString("<hr>\n")
-               } else {
-                  result.WriteString(renderInline(line))
-                  result.WriteByte('\n')
-               }
-               state = stateDefault
-            }
-         }
+// flush closes any open elements and returns the remaining HTML.
+// After calling flush, the renderer is reset to the default state.
+func (mr *markdownRenderer) flush() string {
+   b := &strings.Builder{}
+   mr.closeListIfOpen(b)
+   switch mr.state {
+   case stateCodeBlock:
+      b.WriteString("<pre>")
+      b.WriteString(strings.Join(mr.codeLines, "\n"))
+      b.WriteString("</pre>\n")
+   case stateOrderedList, stateOrderedListPending:
+      b.WriteString("</ol>")
+   case stateUnorderedList, stateUnorderedListPending:
+      b.WriteString("</ul>")
+   case stateOrderedListNestedUL:
+      b.WriteString("</ul></ol>")
+   case stateUnorderedListNestedOL:
+      b.WriteString("</ol></ul>")
+   }
+   mr.state = stateDefault
+   mr.codeLines = nil
+   mr.liOpen = false
+   return b.String()
+}
 
-      case stateUnorderedListNestedOL:
-         if indent, ok := isCodeFence(line); ok {
-            closeListIfOpen()
-            stripTrailingBr()
-            codeBlockIndent = indent
-            codeBlockReturnState = stateUnorderedListNestedOL
-            state = stateCodeBlock
-         } else {
-            ordText, isOrd := isOrderedListLine(line)
-            unordText, isUnord := isUnorderedListLine(line)
-            if isOrd {
-               closeListIfOpen()
-               openLi(result, ordText)
-               liOpen = true
-            } else if isUnord && !isIndented(line) {
-               closeListIfOpen()
-               result.WriteString("</ol>")
-               openLi(result, unordText)
-               liOpen = true
-               state = stateUnorderedList
-            } else if isBlank(line) {
-               closeListIfOpen()
-               result.WriteString("</ol>")
-               state = stateUnorderedListPending
-            } else if isIndented(line) {
-               result.WriteString("<br>\n")
-               result.WriteString(renderInline(strings.TrimLeft(line, " \t")))
-            } else {
-               closeListIfOpen()
-               result.WriteString("</ol></ul>")
-               if strings.TrimSpace(line) == "---" {
-                  result.WriteString("<hr>\n")
-               } else {
-                  result.WriteString(renderInline(line))
-                  result.WriteByte('\n')
-               }
-               state = stateDefault
-            }
+func (mr *markdownRenderer) processLine(b *strings.Builder, line string) {
+   switch mr.state {
+   case stateCodeBlock:
+      if _, ok := isCodeFence(line); ok {
+         b.WriteString("<pre>")
+         b.WriteString(strings.Join(mr.codeLines, "\n"))
+         b.WriteString("</pre>\n")
+         mr.codeLines = nil
+         mr.state = mr.codeBlockReturnState
+      } else {
+         if len(line) >= mr.codeBlockIndent {
+            line = line[mr.codeBlockIndent:]
          }
+         mr.codeLines = append(mr.codeLines, line)
+      }
 
-      case stateOrderedListPending:
-         if isBlank(line) {
-            closeListIfOpen()
-            result.WriteString("</ol>\n")
-            state = stateDefault
+   case stateDefault:
+      if indent, ok := isCodeFence(line); ok {
+         mr.codeBlockIndent = indent
+         mr.codeBlockReturnState = stateDefault
+         mr.state = stateCodeBlock
+      } else if strings.TrimSpace(line) == "---" {
+         b.WriteString("<hr>\n")
+      } else {
+         ordText, isOrd := isOrderedListLine(line)
+         unordText, isUnord := isUnorderedListLine(line)
+         if isOrd {
+            b.WriteString("<ol>")
+            openLi(b, ordText)
+            mr.liOpen = true
+            mr.state = stateOrderedList
+         } else if isUnord {
+            b.WriteString("<ul>")
+            openLi(b, unordText)
+            mr.liOpen = true
+            mr.state = stateUnorderedList
+         } else if isBlank(line) {
+            b.WriteString("<br>\n")
          } else {
-            ordText, isOrd := isOrderedListLine(line)
-            unordText, isUnord := isUnorderedListLine(line)
-            if isOrd {
-               closeListIfOpen()
-               openLi(result, ordText)
-               liOpen = true
-               state = stateOrderedList
-            } else if isUnord && isIndented(line) {
-               closeListIfOpen()
-               result.WriteString("<ul>")
-               openLi(result, unordText)
-               liOpen = true
-               state = stateOrderedListNestedUL
-            } else if isUnord {
-               closeListIfOpen()
-               result.WriteString("</ol><ul>")
-               openLi(result, unordText)
-               liOpen = true
-               state = stateUnorderedList
-            } else if isIndented(line) {
-               result.WriteString("<br>\n")
-               result.WriteString(renderInline(strings.TrimLeft(line, " \t")))
-               state = stateOrderedList
-            } else if indent, ok := isCodeFence(line); ok {
-               closeListIfOpen()
-               result.WriteString("</ol>")
-               stripTrailingBr()
-               codeBlockIndent = indent
-               codeBlockReturnState = stateDefault
-               state = stateCodeBlock
-            } else {
-               closeListIfOpen()
-               result.WriteString("</ol>")
-               if strings.TrimSpace(line) == "---" {
-                  result.WriteString("<hr>\n")
-               } else {
-                  result.WriteString(renderInline(line))
-                  result.WriteByte('\n')
-               }
-               state = stateDefault
-            }
+            b.WriteString(renderInline(line))
+            b.WriteString("<br>\n")
          }
+      }
 
-      case stateUnorderedListPending:
-         if isBlank(line) {
-            closeListIfOpen()
-            result.WriteString("</ul>\n")
-            state = stateDefault
+   case stateOrderedList:
+      if indent, ok := isCodeFence(line); ok {
+         mr.closeListIfOpen(b)
+         mr.codeBlockIndent = indent
+         mr.codeBlockReturnState = stateOrderedList
+         mr.state = stateCodeBlock
+      } else {
+         ordText, isOrd := isOrderedListLine(line)
+         unordText, isUnord := isUnorderedListLine(line)
+         if isOrd {
+            mr.closeListIfOpen(b)
+            openLi(b, ordText)
+            mr.liOpen = true
+         } else if isUnord && isIndented(line) {
+            mr.closeListIfOpen(b)
+            b.WriteString("<ul>")
+            openLi(b, unordText)
+            mr.liOpen = true
+            mr.state = stateOrderedListNestedUL
+         } else if isUnord {
+            mr.closeListIfOpen(b)
+            b.WriteString("</ol><ul>")
+            openLi(b, unordText)
+            mr.liOpen = true
+            mr.state = stateUnorderedList
+         } else if isBlank(line) {
+            mr.state = stateOrderedListPending
+         } else if isIndented(line) {
+            b.WriteString("<br>\n")
+            b.WriteString(renderInline(strings.TrimLeft(line, " \t")))
          } else {
-            ordText, isOrd := isOrderedListLine(line)
-            unordText, isUnord := isUnorderedListLine(line)
-            if isUnord {
-               closeListIfOpen()
-               openLi(result, unordText)
-               liOpen = true
-               state = stateUnorderedList
-            } else if isOrd && isIndented(line) {
-               closeListIfOpen()
-               result.WriteString("<ol>")
-               openLi(result, ordText)
-               liOpen = true
-               state = stateUnorderedListNestedOL
-            } else if isOrd {
-               closeListIfOpen()
-               result.WriteString("</ul><ol>")
-               openLi(result, ordText)
-               liOpen = true
-               state = stateOrderedList
-            } else if isIndented(line) {
-               result.WriteString("<br>\n")
-               result.WriteString(renderInline(strings.TrimLeft(line, " \t")))
-               state = stateUnorderedList
-            } else if indent, ok := isCodeFence(line); ok {
-               closeListIfOpen()
-               result.WriteString("</ul>")
-               stripTrailingBr()
-               codeBlockIndent = indent
-               codeBlockReturnState = stateDefault
-               state = stateCodeBlock
+            mr.closeListIfOpen(b)
+            b.WriteString("</ol>")
+            if strings.TrimSpace(line) == "---" {
+               b.WriteString("<hr>\n")
             } else {
-               closeListIfOpen()
-               result.WriteString("</ul>")
-               if strings.TrimSpace(line) == "---" {
-                  result.WriteString("<hr>\n")
-               } else {
-                  result.WriteString(renderInline(line))
-                  result.WriteByte('\n')
-               }
-               state = stateDefault
+               b.WriteString(renderInline(line))
+               b.WriteByte('\n')
             }
+            mr.state = stateDefault
+         }
+      }
+
+   case stateUnorderedList:
+      if indent, ok := isCodeFence(line); ok {
+         mr.closeListIfOpen(b)
+         mr.codeBlockIndent = indent
+         mr.codeBlockReturnState = stateUnorderedList
+         mr.state = stateCodeBlock
+      } else {
+         ordText, isOrd := isOrderedListLine(line)
+         unordText, isUnord := isUnorderedListLine(line)
+         if isUnord {
+            mr.closeListIfOpen(b)
+            openLi(b, unordText)
+            mr.liOpen = true
+         } else if isOrd && isIndented(line) {
+            mr.closeListIfOpen(b)
+            b.WriteString("<ol>")
+            openLi(b, ordText)
+            mr.liOpen = true
+            mr.state = stateUnorderedListNestedOL
+         } else if isOrd {
+            mr.closeListIfOpen(b)
+            b.WriteString("</ul><ol>")
+            openLi(b, ordText)
+            mr.liOpen = true
+            mr.state = stateOrderedList
+         } else if isBlank(line) {
+            mr.state = stateUnorderedListPending
+         } else if isIndented(line) {
+            b.WriteString("<br>\n")
+            b.WriteString(renderInline(strings.TrimLeft(line, " \t")))
+         } else {
+            mr.closeListIfOpen(b)
+            b.WriteString("</ul>")
+            if strings.TrimSpace(line) == "---" {
+               b.WriteString("<hr>\n")
+            } else {
+               b.WriteString(renderInline(line))
+               b.WriteByte('\n')
+            }
+            mr.state = stateDefault
+         }
+      }
+
+   case stateOrderedListNestedUL:
+      if indent, ok := isCodeFence(line); ok {
+         mr.closeListIfOpen(b)
+         mr.codeBlockIndent = indent
+         mr.codeBlockReturnState = stateOrderedListNestedUL
+         mr.state = stateCodeBlock
+      } else {
+         ordText, isOrd := isOrderedListLine(line)
+         unordText, isUnord := isUnorderedListLine(line)
+         if isUnord {
+            mr.closeListIfOpen(b)
+            openLi(b, unordText)
+            mr.liOpen = true
+         } else if isOrd && !isIndented(line) {
+            mr.closeListIfOpen(b)
+            b.WriteString("</ul>")
+            openLi(b, ordText)
+            mr.liOpen = true
+            mr.state = stateOrderedList
+         } else if isBlank(line) {
+            mr.closeListIfOpen(b)
+            b.WriteString("</ul>")
+            mr.state = stateOrderedListPending
+         } else if isIndented(line) {
+            b.WriteString("<br>\n")
+            b.WriteString(renderInline(strings.TrimLeft(line, " \t")))
+         } else {
+            mr.closeListIfOpen(b)
+            b.WriteString("</ul></ol>")
+            if strings.TrimSpace(line) == "---" {
+               b.WriteString("<hr>\n")
+            } else {
+               b.WriteString(renderInline(line))
+               b.WriteByte('\n')
+            }
+            mr.state = stateDefault
+         }
+      }
+
+   case stateUnorderedListNestedOL:
+      if indent, ok := isCodeFence(line); ok {
+         mr.closeListIfOpen(b)
+         mr.codeBlockIndent = indent
+         mr.codeBlockReturnState = stateUnorderedListNestedOL
+         mr.state = stateCodeBlock
+      } else {
+         ordText, isOrd := isOrderedListLine(line)
+         unordText, isUnord := isUnorderedListLine(line)
+         if isOrd {
+            mr.closeListIfOpen(b)
+            openLi(b, ordText)
+            mr.liOpen = true
+         } else if isUnord && !isIndented(line) {
+            mr.closeListIfOpen(b)
+            b.WriteString("</ol>")
+            openLi(b, unordText)
+            mr.liOpen = true
+            mr.state = stateUnorderedList
+         } else if isBlank(line) {
+            mr.closeListIfOpen(b)
+            b.WriteString("</ol>")
+            mr.state = stateUnorderedListPending
+         } else if isIndented(line) {
+            b.WriteString("<br>\n")
+            b.WriteString(renderInline(strings.TrimLeft(line, " \t")))
+         } else {
+            mr.closeListIfOpen(b)
+            b.WriteString("</ol></ul>")
+            if strings.TrimSpace(line) == "---" {
+               b.WriteString("<hr>\n")
+            } else {
+               b.WriteString(renderInline(line))
+               b.WriteByte('\n')
+            }
+            mr.state = stateDefault
+         }
+      }
+
+   case stateOrderedListPending:
+      if isBlank(line) {
+         mr.closeListIfOpen(b)
+         b.WriteString("</ol>\n")
+         mr.state = stateDefault
+      } else {
+         ordText, isOrd := isOrderedListLine(line)
+         unordText, isUnord := isUnorderedListLine(line)
+         if isOrd {
+            mr.closeListIfOpen(b)
+            openLi(b, ordText)
+            mr.liOpen = true
+            mr.state = stateOrderedList
+         } else if isUnord && isIndented(line) {
+            mr.closeListIfOpen(b)
+            b.WriteString("<ul>")
+            openLi(b, unordText)
+            mr.liOpen = true
+            mr.state = stateOrderedListNestedUL
+         } else if isUnord {
+            mr.closeListIfOpen(b)
+            b.WriteString("</ol><ul>")
+            openLi(b, unordText)
+            mr.liOpen = true
+            mr.state = stateUnorderedList
+         } else if isIndented(line) {
+            b.WriteString("<br>\n")
+            b.WriteString(renderInline(strings.TrimLeft(line, " \t")))
+            mr.state = stateOrderedList
+         } else if indent, ok := isCodeFence(line); ok {
+            mr.closeListIfOpen(b)
+            b.WriteString("</ol>")
+            mr.codeBlockIndent = indent
+            mr.codeBlockReturnState = stateDefault
+            mr.state = stateCodeBlock
+         } else {
+            mr.closeListIfOpen(b)
+            b.WriteString("</ol>")
+            if strings.TrimSpace(line) == "---" {
+               b.WriteString("<hr>\n")
+            } else {
+               b.WriteString(renderInline(line))
+               b.WriteByte('\n')
+            }
+            mr.state = stateDefault
+         }
+      }
+
+   case stateUnorderedListPending:
+      if isBlank(line) {
+         mr.closeListIfOpen(b)
+         b.WriteString("</ul>\n")
+         mr.state = stateDefault
+      } else {
+         ordText, isOrd := isOrderedListLine(line)
+         unordText, isUnord := isUnorderedListLine(line)
+         if isUnord {
+            mr.closeListIfOpen(b)
+            openLi(b, unordText)
+            mr.liOpen = true
+            mr.state = stateUnorderedList
+         } else if isOrd && isIndented(line) {
+            mr.closeListIfOpen(b)
+            b.WriteString("<ol>")
+            openLi(b, ordText)
+            mr.liOpen = true
+            mr.state = stateUnorderedListNestedOL
+         } else if isOrd {
+            mr.closeListIfOpen(b)
+            b.WriteString("</ul><ol>")
+            openLi(b, ordText)
+            mr.liOpen = true
+            mr.state = stateOrderedList
+         } else if isIndented(line) {
+            b.WriteString("<br>\n")
+            b.WriteString(renderInline(strings.TrimLeft(line, " \t")))
+            mr.state = stateUnorderedList
+         } else if indent, ok := isCodeFence(line); ok {
+            mr.closeListIfOpen(b)
+            b.WriteString("</ul>")
+            mr.codeBlockIndent = indent
+            mr.codeBlockReturnState = stateDefault
+            mr.state = stateCodeBlock
+         } else {
+            mr.closeListIfOpen(b)
+            b.WriteString("</ul>")
+            if strings.TrimSpace(line) == "---" {
+               b.WriteString("<hr>\n")
+            } else {
+               b.WriteString(renderInline(line))
+               b.WriteByte('\n')
+            }
+            mr.state = stateDefault
          }
       }
    }
+}
 
-   closeListIfOpen()
+// renderLine processes a single line and returns the HTML fragment for it.
+// Parser state is preserved across calls.
+func (mr *markdownRenderer) renderLine(line string) string {
+   b := &strings.Builder{}
+   mr.processLine(b, line)
+   return b.String()
+}
 
-   switch state {
-   case stateCodeBlock:
-      result.WriteString("<pre>")
-      result.WriteString(strings.Join(codeLines, "\n"))
-      result.WriteString("</pre>\n")
-   case stateOrderedList, stateOrderedListPending:
-      result.WriteString("</ol>")
-   case stateUnorderedList, stateUnorderedListPending:
-      result.WriteString("</ul>")
-   case stateOrderedListNestedUL:
-      result.WriteString("</ul></ol>")
-   case stateUnorderedListNestedOL:
-      result.WriteString("</ol></ul>")
+// streamingMarkdownRenderer wraps markdownRenderer for streaming use.
+// It buffers incoming text, renders complete lines as they arrive,
+// and flushes remaining state on demand.
+type streamingMarkdownRenderer struct {
+   renderer *markdownRenderer
+   lineBuf  strings.Builder
+   onToken  func(string)
+}
+
+func newStreamingMarkdownRenderer(onToken func(string)) *streamingMarkdownRenderer {
+   return &streamingMarkdownRenderer{
+      renderer: newMarkdownRenderer(),
+      onToken:  onToken,
    }
+}
 
-   stripTrailingBr()
+// finish flushes any partial line and closes all open elements.
+// Safe to call multiple times (subsequent calls are no-ops).
+func (s *streamingMarkdownRenderer) finish() {
+   if s.lineBuf.Len() > 0 {
+      line := s.lineBuf.String()
+      s.lineBuf.Reset()
+      output := s.renderer.renderLine(html.EscapeString(line))
+      if output != "" && s.onToken != nil {
+         s.onToken(output)
+      }
+   }
+   output := s.renderer.flush()
+   if output != "" && s.onToken != nil {
+      s.onToken(output)
+   }
+}
 
-   return result.String()
+func (s *streamingMarkdownRenderer) write(text string) {
+   s.lineBuf.WriteString(text)
+   for {
+      str := s.lineBuf.String()
+      idx := strings.IndexByte(str, '\n')
+      if idx < 0 {
+         return
+      }
+      line := str[:idx]
+      s.lineBuf.Reset()
+      s.lineBuf.WriteString(str[idx+1:])
+      output := s.renderer.renderLine(html.EscapeString(line))
+      if output != "" && s.onToken != nil {
+         s.onToken(output)
+      }
+   }
 }

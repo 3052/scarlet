@@ -52,7 +52,12 @@ func consumeStream(body io.Reader, onToken func(string)) (*Message, error) {
    var fullReasoning, fullContent strings.Builder
    var printedR, reasoningClosed, completionOpened bool
 
+   reasoningSMR := newStreamingMarkdownRenderer(onToken)
+   contentSMR := newStreamingMarkdownRenderer(onToken)
+
    scanner := bufio.NewScanner(body)
+   // Increase scanner buffer for long lines
+   scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
    for scanner.Scan() {
       line := scanner.Text()
@@ -79,13 +84,12 @@ func consumeStream(body io.Reader, onToken func(string)) (*Message, error) {
                printedR = true
             }
             fullReasoning.WriteString(rc)
-            if onToken != nil {
-               onToken(renderMarkdown(rc))
-            }
+            reasoningSMR.write(rc)
          }
 
          if c := choice.Delta.Content; c != "" {
             if printedR && !reasoningClosed {
+               reasoningSMR.finish()
                if onToken != nil {
                   onToken(`</details>`)
                }
@@ -98,20 +102,20 @@ func consumeStream(body io.Reader, onToken func(string)) (*Message, error) {
                completionOpened = true
             }
             fullContent.WriteString(c)
-            if onToken != nil {
-               onToken(renderMarkdown(c))
-            }
+            contentSMR.write(c)
          }
       }
 
       if sr.Usage != nil && sr.Usage.PromptTokens > 0 {
          if printedR && !reasoningClosed {
+            reasoningSMR.finish()
             if onToken != nil {
                onToken(`</details>`)
             }
             reasoningClosed = true
          }
          if completionOpened {
+            contentSMR.finish()
             if onToken != nil {
                onToken(`</div>`)
             }
@@ -127,11 +131,13 @@ func consumeStream(body io.Reader, onToken func(string)) (*Message, error) {
    }
 
    if printedR && !reasoningClosed {
+      reasoningSMR.finish()
       if onToken != nil {
          onToken(`</details>`)
       }
    }
    if completionOpened {
+      contentSMR.finish()
       if onToken != nil {
          onToken(`</div>`)
       }
