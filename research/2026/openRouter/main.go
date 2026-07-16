@@ -9,6 +9,8 @@ import (
 func main() {
    openOnly := flag.Bool("open", false,
       "only show models with open weights")
+   imageOnly := flag.Bool("image", false,
+      "only show models that accept image input")
    sortBy := flag.String("sort", "",
       "sort key (required): elo, intelligence, coding, agentic")
    flag.Parse()
@@ -45,6 +47,17 @@ func main() {
       rows = filtered
    }
 
+   // Filter by image input if specified
+   if *imageOnly {
+      var filtered []ModelData
+      for _, r := range rows {
+         if r.HasImage {
+            filtered = append(filtered, r)
+         }
+      }
+      rows = filtered
+   }
+
    // Filter & sort by the chosen key
    results := FilterAndSort(rows, *sortBy)
 
@@ -55,6 +68,12 @@ func main() {
 
    // Print sort indicator
    fmt.Printf("Sorted by: %s descending\n", *sortBy)
+   if *openOnly {
+      fmt.Println("Filter: open weights only")
+   }
+   if *imageOnly {
+      fmt.Println("Filter: image input only")
+   }
 
    // Print human-readable output
    for _, r := range results {
@@ -64,6 +83,9 @@ func main() {
       fmt.Printf("Context length: %d tokens\n", r.ContextLength)
       if r.HfSlug != "" {
          fmt.Printf("Model weights: %s\n", r.HfSlug)
+      }
+      if r.HasImage {
+         fmt.Printf("Image input: yes\n")
       }
       fmt.Printf("Arena ELO: %.1f\n", r.Elo)
       fmt.Printf("Intelligence: %.1f\n", r.Intelligence)

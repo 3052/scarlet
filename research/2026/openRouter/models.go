@@ -4,6 +4,7 @@ import (
    "encoding/json"
    "io"
    "net/http"
+   "slices"
    "sort"
    "strconv"
 )
@@ -89,12 +90,13 @@ type Endpoint struct {
 }
 
 type Model struct {
-   Permaslug     string   `json:"permaslug"`
-   Name          string   `json:"name"`
-   CreatedAt     string   `json:"created_at"`
-   ContextLength int64    `json:"context_length"`
-   HfSlug        string   `json:"hf_slug"`
-   Endpoint      Endpoint `json:"endpoint"`
+   Permaslug       string   `json:"permaslug"`
+   Name            string   `json:"name"`
+   CreatedAt       string   `json:"created_at"`
+   ContextLength   int64    `json:"context_length"`
+   HfSlug          string   `json:"hf_slug"`
+   InputModalities []string `json:"input_modalities"`
+   Endpoint        Endpoint `json:"endpoint"`
 }
 
 // ============================================================================
@@ -107,6 +109,7 @@ type ModelData struct {
    CreatedAt      string
    ContextLength  int64
    HfSlug         string
+   HasImage       bool
    Elo            float64
    Intelligence   float64
    Coding         float64
@@ -128,6 +131,7 @@ func BuildModelData(apiResp *APIResponse) []ModelData {
          CreatedAt:      m.CreatedAt,
          ContextLength:  m.ContextLength,
          HfSlug:         m.HfSlug,
+         HasImage:       slices.Contains(m.InputModalities, "image"),
          InputPrice:     parsePricePerMillion(m.Endpoint.Pricing.Prompt),
          OutputPrice:    parsePricePerMillion(m.Endpoint.Pricing.Completion),
          CacheReadPrice: parsePricePerMillion(m.Endpoint.Pricing.InputCacheRead),
