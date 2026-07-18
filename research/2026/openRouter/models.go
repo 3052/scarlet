@@ -27,7 +27,7 @@ func parsePricePerMillion(s string) float64 {
 func sortValue(r ModelData, key string) (float64, bool) {
    switch key {
    case "elo":
-      return r.Elo, r.Elo > 0
+      return float64(r.Elo), r.Elo > 0
    case "intelligence":
       return r.Intelligence, r.Intelligence > 0
    case "coding":
@@ -82,7 +82,7 @@ type Benchmark struct {
 }
 
 type DABenchmark struct {
-   MaxElo float64 `json:"max_elo"`
+   MaxElo int `json:"max_elo"`
 }
 
 type Endpoint struct {
@@ -110,7 +110,7 @@ type ModelData struct {
    ContextLength  int64
    HfSlug         string
    HasImage       bool
-   Elo            float64
+   Elo            int
    Intelligence   float64
    Coding         float64
    Agentic        float64

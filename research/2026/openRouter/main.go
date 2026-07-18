@@ -6,15 +6,13 @@ import (
    "os"
 )
 
-var sortKeys = []string{"elo", "intelligence", "coding", "agentic"}
-
 func main() {
    openOnly := flag.Bool("open", false,
       "only show models with open weights")
    imageOnly := flag.Bool("image", false,
       "only show models that accept image input")
    export := flag.Bool("export", false,
-      "fetch models and write a file for every sort key")
+      "fetch models and print them sorted by intelligence")
    flag.Parse()
 
    // No flags -> do nothing.
@@ -57,57 +55,48 @@ func main() {
       rows = filtered
    }
 
-   // For each sort key, filter+sort and write its own file.
-   for _, key := range sortKeys {
-      results := FilterAndSort(rows, key)
-      fname := "models_" + key + ".txt"
-      f, err := os.Create(fname)
-      if err != nil {
-         fmt.Fprintf(os.Stderr, "Error creating %s: %v\n", fname, err)
-         os.Exit(1)
-      }
+   // Filter+sort by intelligence
+   key := "intelligence"
+   results := FilterAndSort(rows, key)
 
-      fmt.Fprintf(f, "Sorted by: %s descending\n", key)
-      if *openOnly {
-         fmt.Fprintln(f, "Filter: open weights only")
-      }
-      if *imageOnly {
-         fmt.Fprintln(f, "Filter: image input only")
-      }
-
-      if len(results) == 0 {
-         fmt.Fprintln(f, "No models match the criteria")
-         f.Close()
-         fmt.Fprintf(os.Stderr, "Wrote %s (0 models)\n", fname)
-         continue
-      }
-
-      for _, r := range results {
-         fmt.Fprintln(f)
-         fmt.Fprintf(f, "Model: %s\n", r.Name)
-         fmt.Fprintf(f, "Created: %s\n", r.CreatedAt)
-         fmt.Fprintf(f, "Context length: %d tokens\n", r.ContextLength)
-         if r.HfSlug != "" {
-            fmt.Fprintf(f, "Model weights: %s\n", r.HfSlug)
-         }
-         if r.HasImage {
-            fmt.Fprintln(f, "Image input: yes")
-         }
-         fmt.Fprintf(f, "Arena ELO: %.1f\n", r.Elo)
-         fmt.Fprintf(f, "Intelligence: %.1f\n", r.Intelligence)
-         fmt.Fprintf(f, "Coding: %.1f\n", r.Coding)
-         fmt.Fprintf(f, "Agentic: %.1f\n", r.Agentic)
-         fmt.Fprintf(f, "Input price: $%.2f / M tokens\n", r.InputPrice)
-         fmt.Fprintf(f, "Output price: $%.2f / M tokens\n", r.OutputPrice)
-         fmt.Fprintf(f, "Cache read price: $%.2f / M tokens\n", r.CacheReadPrice)
-      }
-
-      fmt.Fprintf(f, "\nRanked %d models (out of %d total)\n",
-         len(results), len(rows))
-      f.Close()
-      fmt.Fprintf(os.Stderr, "Wrote %s (%d models)\n", fname, len(results))
+   out := os.Stdout
+   fmt.Fprintf(out, "Sorted by: %s descending\n", key)
+   if *openOnly {
+      fmt.Fprintln(out, "Filter: open weights only")
+   }
+   if *imageOnly {
+      fmt.Fprintln(out, "Filter: image input only")
    }
 
-   fmt.Fprintf(os.Stderr, "\nProcessed %d total models across %d sort keys\n",
-      len(rows), len(sortKeys))
+   if len(results) == 0 {
+      fmt.Fprintln(out, "No models match the criteria")
+      fmt.Fprintf(os.Stderr, "Printed 0 models\n")
+      return
+   }
+
+   for _, r := range results {
+      fmt.Fprintln(out)
+      fmt.Fprintf(out, "Model: %s\n", r.Name)
+      fmt.Fprintf(out, "Created: %s\n", r.CreatedAt)
+      fmt.Fprintf(out, "Context length: %d tokens\n", r.ContextLength)
+      if r.HfSlug != "" {
+         fmt.Fprintf(out, "Model weights: %s\n", r.HfSlug)
+      }
+      if r.HasImage {
+         fmt.Fprintln(out, "Image input: yes")
+      }
+      if r.Elo > 0 {
+         fmt.Fprintf(out, "Arena ELO: %d\n", r.Elo)
+      }
+      fmt.Fprintf(out, "Intelligence: %.1f\n", r.Intelligence)
+      fmt.Fprintf(out, "Coding: %.1f\n", r.Coding)
+      fmt.Fprintf(out, "Agentic: %.1f\n", r.Agentic)
+      fmt.Fprintf(out, "Input price: $%.2f / M tokens\n", r.InputPrice)
+      fmt.Fprintf(out, "Output price: $%.2f / M tokens\n", r.OutputPrice)
+      fmt.Fprintf(out, "Cache read price: $%.2f / M tokens\n", r.CacheReadPrice)
+   }
+
+   fmt.Fprintf(out, "\nRanked %d models (out of %d total)\n",
+      len(results), len(rows))
+   fmt.Fprintf(os.Stderr, "Printed %d models\n", len(results))
 }
